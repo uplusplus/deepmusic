@@ -89,18 +89,44 @@ class ScoreRepository {
   /// 下载乐谱文件
   Future<String> downloadScoreFile(String scoreId, String savePath) async {
     try {
-      // 先获取乐谱信息
-      final score = await getScoreById(scoreId);
-      
-      // 下载文件
       await _apiClient.dio.download(
-        '/uploads/${score.musicXmlPath.split('/').last}',
+        '/scores/$scoreId/xml',
         savePath,
       );
-      
       return savePath;
     } on DioException catch (e) {
       throw ScoreException(e.message ?? '下载乐谱失败');
+    }
+  }
+
+  /// 获取乐谱 MusicXML 内容 (用于渲染)
+  Future<String> getScoreXml(String scoreId) async {
+    try {
+      final response = await _apiClient.dio.get(
+        '/scores/$scoreId/xml',
+        options: Options(responseType: ResponseType.plain),
+      );
+      return response.data as String;
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '获取乐谱文件失败');
+    }
+  }
+
+  /// 收藏乐谱
+  Future<void> favoriteScore(String scoreId) async {
+    try {
+      await _apiClient.dio.post('/scores/$scoreId/favorite');
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '收藏失败');
+    }
+  }
+
+  /// 取消收藏
+  Future<void> unfavoriteScore(String scoreId) async {
+    try {
+      await _apiClient.dio.delete('/scores/$scoreId/favorite');
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '取消收藏失败');
     }
   }
 }

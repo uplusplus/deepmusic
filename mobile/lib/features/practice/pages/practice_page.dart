@@ -326,7 +326,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              '第 ${_follower!.currentMeasure} 小节 · 第 ${_follower!.currentPage}/${_follower!._pageLayouts.length} 页',
+              '第 ${_follower!.currentMeasure} 小节 · 第 ${_follower!.currentPage}/${_follower!.totalPages} 页',
               style: const TextStyle(color: Colors.grey),
             ),
           ] else ...[

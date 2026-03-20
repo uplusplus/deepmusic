@@ -105,6 +105,12 @@ class ScoreFollower {
   /// 错误音符数
   int get wrongNotes => _wrongNotes;
 
+  /// 总页数
+  int get totalPages => _pageLayouts.length;
+
+  /// 页面布局
+  List<PageLayout> get pageLayouts => _pageLayouts;
+
   ScoreFollower(this.score, {this.measuresPerPage = 4}) {
     _pageLayouts = _buildPageLayouts();
     _practiceStartTime = DateTime.now();

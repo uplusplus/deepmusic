@@ -1,10 +1,12 @@
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
   factory ApiClient() => _instance;
 
   late final Dio _dio;
+  String? _token;
 
   ApiClient._internal() {
     _dio = Dio(
@@ -21,40 +23,47 @@ class ApiClient {
       ),
     );
 
-    // 请求拦截器
+    // 请求拦截器: 自动附加 token
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
-          // TODO: 添加认证 token
-          // final token = await _getToken();
-          // if (token != null) {
-          //   options.headers['Authorization'] = 'Bearer $token';
-          // }
+        onRequest: (options, handler) async {
+          final token = await getToken();
+          if (token != null) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
           return handler.next(options);
         },
-        onResponse: (response, handler) {
-          return handler.next(response);
-        },
         onError: (error, handler) {
-          // 统一错误处理
           final message = _getErrorMessage(error);
           error = error.copyWith(message: message);
           return handler.next(error);
         },
       ),
     );
-
-    // 日志拦截器 (仅调试模式)
-    _dio.interceptors.add(
-      LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        error: true,
-      ),
-    );
   }
 
   Dio get dio => _dio;
+
+  // ── Token 管理 ──
+
+  Future<String?> getToken() async {
+    _token ??= (await SharedPreferences.getInstance()).getString('auth_token');
+    return _token;
+  }
+
+  Future<void> saveToken(String token) async {
+    _token = token;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', token);
+  }
+
+  Future<void> clearToken() async {
+    _token = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+  }
+
+  // ── 错误处理 ──
 
   String _getErrorMessage(DioException error) {
     switch (error.type) {

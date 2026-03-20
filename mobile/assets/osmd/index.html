@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>OSMD Score Renderer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #fff;
+      overflow-x: hidden;
+      font-family: -apple-system, sans-serif;
+    }
+    #score-container {
+      padding: 16px;
+      min-height: 100vh;
+    }
+    #loading {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+      font-size: 14px;
+    }
+    .highlight-measure rect {
+      fill: rgba(66, 133, 244, 0.15) !important;
+      stroke: rgba(66, 133, 244, 0.4) !important;
+      stroke-width: 2px;
+    }
+    .highlight-note {
+      fill: #4285f4 !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">正在加载乐谱...</div>
+  <div id="score-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+  <script>
+    let osmd = null;
+    let currentXml = '';
+    let measurePositions = [];
+
+    // ── 初始化 OSMD ──
+    function init() {
+      osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('score-container', {
+        autoResize: true,
+        drawTitle: true,
+        drawSubtitle: false,
+        drawComposer: false,
+        drawCredits: false,
+        drawPartNames: false,
+        fingeringPosition: 'below',
+        spacingBetweenTextLines: 0,
+        defaultColorMusic: '#333333',
+        coloringMode: 1,  // custom note colors
+      });
+      osmd.setLogLevel('WARN');
+      sendToFlutter('initialized');
+    }
+
+    // ── 渲染乐谱 ──
+    async function render(xmlString) {
+      try {
+        currentXml = xmlString;
+        document.getElementById('loading').style.display = 'block';
+
+        await osmd.load(xmlString);
+        await osmd.render();
+
+        // 收集小节位置信息
+        collectMeasurePositions();
+
+        document.getElementById('loading').style.display = 'none';
+        sendToFlutter('rendered', {
+          measureCount: measurePositions.length,
+          width: document.getElementById('score-container').scrollWidth,
+          height: document.getElementById('score-container').scrollHeight,
+        });
+      } catch (e) {
+        document.getElementById('loading').textContent = '渲染失败: ' + e.message;
+        sendToFlutter('error', { message: e.message });
+      }
+    }
+
+    // ── 收集小节位置 ──
+    function collectMeasurePositions() {
+      measurePositions = [];
+      if (!osmd || !osmd.graphic || !osmd.graphic.measureList) return;
+
+      const measures = osmd.graphic.measureList;
+      for (let i = 0; i < measures.length; i++) {
+        const measure = measures[i][0]; // 第一声部
+        if (measure && measure.PositionAndShape) {
+          const pos = measure.PositionAndShape;
+          measurePositions.push({
+            index: i,
+            x: pos.absolutePosition.x * 10,
+            y: pos.absolutePosition.y * 10,
+            width: pos.size.width * 10,
+            height: pos.size.height * 10,
+          });
+        }
+      }
+    }
+
+    // ── 高亮指定小节 ──
+    function highlightMeasure(measureIndex) {
+      if (!osmd || !osmd.cursor) return;
+
+      // 移除旧高亮
+      clearHighlight();
+
+      // 使用 OSMD cursor 移动到目标小节
+      osmd.cursor.reset();
+      const measures = osmd.graphic?.measureList;
+      if (!measures || measureIndex >= measures.length) return;
+
+      // 计算目标小节第一个音符的 tick 位置
+      const targetMeasure = measures[measureIndex][0];
+      if (targetMeasure && targetMeasure.staffEntries) {
+        for (let j = 0; j < targetMeasure.staffEntries.length; j++) {
+          osmd.cursor.next();
+        }
+      }
+
+      // 添加 CSS 高亮
+      addMeasureHighlight(measureIndex);
+    }
+
+    // ── 添加小节高亮背景 ──
+    function addMeasureHighlight(measureIndex) {
+      const measures = document.querySelectorAll('#score-container svg .vf-stave');
+      // OSMD 渲染后的小节 SVG 元素
+      const svg = document.querySelector('#score-container svg');
+      if (!svg) return;
+
+      // 移除旧高亮
+      const oldHighlight = svg.querySelector('.measure-highlight');
+      if (oldHighlight) oldHighlight.remove();
+
+      if (measureIndex >= measurePositions.length) return;
+      const pos = measurePositions[measureIndex];
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('class', 'measure-highlight');
+      rect.setAttribute('x', pos.x);
+      rect.setAttribute('y', pos.y - 10);
+      rect.setAttribute('width', pos.width);
+      rect.setAttribute('height', pos.height + 20);
+      rect.setAttribute('fill', 'rgba(66, 133, 244, 0.12)');
+      rect.setAttribute('rx', '4');
+      svg.insertBefore(rect, svg.firstChild);
+    }
+
+    // ── 清除高亮 ──
+    function clearHighlight() {
+      const svg = document.querySelector('#score-container svg');
+      if (!svg) return;
+      const oldHighlight = svg.querySelector('.measure-highlight');
+      if (oldHighlight) oldHighlight.remove();
+    }
+
+    // ── 滚动到指定小节 ──
+    function scrollToMeasure(measureIndex) {
+      if (measureIndex >= measurePositions.length) return;
+      const pos = measurePositions[measureIndex];
+      const container = document.getElementById('score-container');
+
+      // 计算滚动目标 (居中显示)
+      const viewportWidth = window.innerWidth;
+      const scrollTarget = pos.x - viewportWidth / 3;
+
+      window.scrollTo({
+        left: Math.max(0, scrollTarget),
+        top: pos.y - 80,
+        behavior: 'smooth',
+      });
+    }
+
+    // ── 缩放 ──
+    function setZoom(zoomLevel) {
+      if (!osmd) return;
+      osmd.zoom = zoomLevel;
+      osmd.render();
+      collectMeasurePositions();
+    }
+
+    // ── 获取小节位置 (给 Flutter 调用) ──
+    function getMeasurePositions() {
+      return JSON.stringify(measurePositions);
+    }
+
+    // ── 通信：发送消息到 Flutter ──
+    function sendToFlutter(type, data) {
+      if (window.FlutterChannel && window.FlutterChannel.postMessage) {
+        window.FlutterChannel.postMessage(JSON.stringify({ type, ...data }));
+      }
+    }
+
+    // ── 通信：接收 Flutter 消息 ──
+    function handleMessage(message) {
+      try {
+        const msg = JSON.parse(message);
+        switch (msg.action) {
+          case 'render':
+            render(msg.xml);
+            break;
+          case 'highlight':
+            highlightMeasure(msg.measure);
+            scrollToMeasure(msg.measure);
+            break;
+          case 'clearHighlight':
+            clearHighlight();
+            break;
+          case 'scrollTo':
+            scrollToMeasure(msg.measure);
+            break;
+          case 'zoom':
+            setZoom(msg.zoom);
+            break;
+          case 'getPositions':
+            sendToFlutter('positions', { data: measurePositions });
+            break;
+        }
+      } catch (e) {
+        console.error('Handle message error:', e);
+      }
+    }
+
+    // ── 暴露给 Flutter 的全局接口 ──
+    window.osmdBridge = {
+      handleMessage: handleMessage,
+      getPositions: getMeasurePositions,
+    };
+
+    // 启动
+    init();
+  </script>
+</body>
+</html>
