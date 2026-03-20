@@ -9,8 +9,9 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final connectionState = ref.watch(midiConnectionStateProvider);
-    final connectedDevice = ref.watch(connectedDeviceProvider);
+    final connectionInfo = ref.watch(midiConnectionInfoProvider);
+    final connectionState = connectionInfo.state;
+    final deviceName = connectionInfo.deviceName;
 
     return Scaffold(
       body: SafeArea(
@@ -59,7 +60,7 @@ class HomePage extends ConsumerWidget {
               const SizedBox(height: 32),
 
               // 设备连接卡片
-              _buildDeviceCard(context, connectionState, connectedDevice),
+              _buildDeviceCard(context, connectionState, deviceName),
 
               const SizedBox(height: 24),
 
@@ -97,7 +98,7 @@ class HomePage extends ConsumerWidget {
   Widget _buildDeviceCard(
     BuildContext context,
     MidiConnectionState state,
-    MidiDevice? device,
+    String? deviceName,
   ) {
     bool isConnected = state == MidiConnectionState.connected;
     bool isConnecting = state == MidiConnectionState.connecting;
@@ -139,7 +140,7 @@ class HomePage extends ConsumerWidget {
                 children: [
                   Text(
                     isConnected
-                        ? device!.name
+                        ? (deviceName ?? 'MIDI 设备')
                         : (isConnecting ? '正在连接...' : '连接电钢琴'),
                     style: const TextStyle(
                       color: Colors.white,
@@ -203,14 +204,16 @@ class HomePage extends ConsumerWidget {
       ),
     ];
 
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: isLandscape ? 4 : 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 1.5,
+        childAspectRatio: isLandscape ? 1.8 : 1.5,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => _buildQuickStartItem(items[index]),

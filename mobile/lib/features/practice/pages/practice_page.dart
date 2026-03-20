@@ -274,6 +274,8 @@ class _PracticePageState extends ConsumerState<PracticePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_state == PracticeState.playing ? '练习中' : '准备练习'),
@@ -282,25 +284,64 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             IconButton(icon: const Icon(Icons.stop), onPressed: _stopPractice),
         ],
       ),
-      body: Column(
-        children: [
-          _buildConnectionBar(),
-          if (_progress != null)
-            LinearProgressIndicator(
-              value: _progress!.completionPercentage,
-              backgroundColor: AppColors.divider,
-              valueColor: const AlwaysStoppedAnimation(AppColors.primary),
-            ),
-          // ★ 乐谱渲染区 — 占据主要空间
-          Expanded(flex: 5, child: _buildScoreArea()),
-          // 实时音符指示
-          _buildCurrentNoteBar(),
-          // 键盘可视化
-          _buildKeyboard(),
-          // 统计 & 控制
-          _buildControlPanel(),
-        ],
-      ),
+      body: isLandscape ? _buildLandscapeLayout() : _buildPortraitLayout(),
+    );
+  }
+
+  /// 竖屏布局
+  Widget _buildPortraitLayout() {
+    return Column(
+      children: [
+        _buildConnectionBar(),
+        if (_progress != null)
+          LinearProgressIndicator(
+            value: _progress!.completionPercentage,
+            backgroundColor: AppColors.divider,
+            valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+          ),
+        Expanded(flex: 5, child: _buildScoreArea()),
+        _buildCurrentNoteBar(),
+        _buildKeyboard(),
+        _buildControlPanel(),
+      ],
+    );
+  }
+
+  /// 横屏布局 — 乐谱左 | 音符+键盘+控制右
+  Widget _buildLandscapeLayout() {
+    return Row(
+      children: [
+        // 左: 乐谱 (占主要宽度)
+        Expanded(
+          flex: 3,
+          child: Column(
+            children: [
+              _buildConnectionBar(),
+              if (_progress != null)
+                LinearProgressIndicator(
+                  value: _progress!.completionPercentage,
+                  backgroundColor: AppColors.divider,
+                  valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+                ),
+              Expanded(child: _buildScoreArea()),
+            ],
+          ),
+        ),
+        // 右: 控制面板
+        Container(
+          width: 280,
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: AppColors.divider)),
+          ),
+          child: Column(
+            children: [
+              _buildCurrentNoteBar(),
+              Expanded(child: _buildKeyboard()),
+              _buildControlPanel(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -512,9 +553,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     final baseOctave = currentNote != null ? (currentNote.pitchNumber ~/ 12) - 1 : 4;
     final baseNote = baseOctave * 12;
     final expectedPitches = _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {};
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
-      height: 80,
+      height: isLandscape ? 64 : 80,
       color: Colors.grey[100],
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Center(
@@ -561,9 +603,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     final wrongNotes = _progress?.wrongNotes ?? 0;
     final missedNotes = _progress?.missedNotes ?? 0;
     final completion = _progress?.completionPercentage ?? 0;
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(isLandscape ? 8 : 12),
       child: Column(
         children: [
           Row(
@@ -574,8 +617,9 @@ class _PracticePageState extends ConsumerState<PracticePage> {
               _buildStatItem('正确', '$correctNotes', AppColors.success),
               _buildStatItem('错误', '$wrongNotes',
                   wrongNotes > 0 ? AppColors.error : AppColors.textSecondary),
-              _buildStatItem('遗漏', '$missedNotes',
-                  missedNotes > 0 ? AppColors.warning : AppColors.textSecondary),
+              if (!isLandscape)
+                _buildStatItem('遗漏', '$missedNotes',
+                    missedNotes > 0 ? AppColors.warning : AppColors.textSecondary),
               _buildStatItem('完成', '${(completion * 100).toInt()}%', AppColors.info),
             ],
           ),

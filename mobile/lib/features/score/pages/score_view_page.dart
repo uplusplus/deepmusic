@@ -146,6 +146,8 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   }
 
   Widget _buildScoreView(ScoreModel score) {
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(score.title),
@@ -159,104 +161,67 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // 乐谱信息栏
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Theme.of(context).colorScheme.surface,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        score.composer,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${score.keySignature} · ${score.timeSignature} · ${score.tempo} BPM',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: score.difficultyColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    score.difficultyText,
-                    style: TextStyle(color: score.difficultyColor),
-                  ),
-                ),
-              ],
-            ),
-          ),
+      body: isLandscape
+          ? _buildLandscapeView(score)
+          : _buildPortraitView(score),
+    );
+  }
 
-          // 统计信息
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: AppColors.divider)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildInfoChip(Icons.music_note, '${score.measures} 小节'),
-                _buildInfoChip(Icons.timer, score.formattedDuration),
-                _buildInfoChip(
-                    Icons.play_circle_outline, '${score.playCount} 次'),
-                _buildInfoChip(Icons.favorite, '${score.favoriteCount}'),
-              ],
-            ),
-          ),
+  Widget _buildPortraitView(ScoreModel score) {
+    return Column(
+      children: [
+        _buildScoreInfoBar(score),
+        _buildScoreStatsBar(score),
+        Expanded(child: _buildScoreRenderer()),
+      ],
+    );
+  }
 
-          // ★ 乐谱渲染区 (OSMD WebView)
-          Expanded(
-            child: _buildScoreRenderer(),
-          ),
-        ],
-      ),
-
-      // 底部: 试听 + 开始练习
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+  Widget _buildLandscapeView(ScoreModel score) {
+    return Row(
+      children: [
+        // 左: 乐谱 (主要区域)
+        Expanded(
+          flex: 3,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              // 播放控制栏
+              Expanded(child: _buildScoreRenderer()),
+            ],
+          ),
+        ),
+        // 右: 信息 + 播放控制
+        Container(
+          width: 260,
+          decoration: BoxDecoration(
+            border: Border(left: BorderSide(color: AppColors.divider)),
+          ),
+          child: Column(
+            children: [
+              _buildScoreInfoBar(score),
+              _buildScoreStatsBar(score),
+              const Spacer(),
               _buildPlaybackBar(score),
-              const SizedBox(height: 12),
-              // 开始练习按钮
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    _autoPlayer?.stop();
-                    Navigator.of(context).pushNamed(
-                      AppRouter.practice,
-                      arguments: {'scoreId': score.id},
-                    );
-                  },
-                  icon: const Icon(Icons.piano),
-                  label: const Text('开始练习'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontSize: 18),
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _autoPlayer?.stop();
+                      Navigator.of(context).pushNamed(
+                        AppRouter.practice,
+                        arguments: {'scoreId': score.id},
+                      );
+                    },
+                    icon: const Icon(Icons.piano),
+                    label: const Text('开始练习'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -264,6 +229,65 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildScoreInfoBar(ScoreModel score) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Theme.of(context).colorScheme.surface,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  score.composer,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${score.keySignature} · ${score.timeSignature} · ${score.tempo} BPM',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: score.difficultyColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              score.difficultyText,
+              style: TextStyle(color: score.difficultyColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreStatsBar(ScoreModel score) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildInfoChip(Icons.music_note, '${score.measures} 小节'),
+          _buildInfoChip(Icons.timer, score.formattedDuration),
+          _buildInfoChip(Icons.play_circle_outline, '${score.playCount} 次'),
+          _buildInfoChip(Icons.favorite, '${score.favoriteCount}'),
+        ],
       ),
     );
   }

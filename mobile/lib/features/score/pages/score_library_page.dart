@@ -77,11 +77,7 @@ class _ScoreLibraryPageState extends ConsumerState<ScoreLibraryPage>
           onRefresh: () async {
             ref.invalidate(scoreListProvider);
           },
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: result.scores.length,
-            itemBuilder: (context, index) => _buildScoreCard(result.scores[index]),
-          ),
+          child: _buildScoreList(result.scores),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -97,14 +93,36 @@ class _ScoreLibraryPageState extends ConsumerState<ScoreLibraryPage>
         if (scores.isEmpty) {
           return _buildEmptyState('未找到 "$_searchQuery" 相关曲谱');
         }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: scores.length,
-          itemBuilder: (context, index) => _buildScoreCard(scores[index]),
-        );
+        return _buildScoreList(scores);
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, stack) => _buildErrorState(error.toString()),
+    );
+  }
+
+  Widget _buildScoreList(List<ScoreModel> scores) {
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+
+    if (isLandscape) {
+      // 横屏: 两列网格
+      return GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 3.5,
+        ),
+        itemCount: scores.length,
+        itemBuilder: (context, index) => _buildScoreCard(scores[index]),
+      );
+    }
+
+    // 竖屏: 列表
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: scores.length,
+      itemBuilder: (context, index) => _buildScoreCard(scores[index]),
     );
   }
 
