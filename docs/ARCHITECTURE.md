@@ -1,58 +1,65 @@
-# DeepMusic - Technical Architecture
+# DeepMusic - 技术架构文档
 
-## System Overview
+> 版本: 1.1 | 更新: 2026-03-20
+
+---
+
+## 1. 系统总览
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                        DeepMusic System                          │
-├─────────────────────────────────────────────────────────────────┤
+├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
 │  │   iOS App    │  │ Android App  │  │  Web Admin   │           │
-│  │   (Flutter)  │  │  (Flutter)   │  │  (Flutter)   │           │
+│  │   (Flutter)  │  │  (Flutter)   │  │  (Future)    │           │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
 │         │                 │                 │                    │
 │         └─────────────────┼─────────────────┘                    │
-│                           │                                      │
+│                           │ HTTPS                                │
 │                    ┌──────▼───────┐                              │
 │                    │  API Gateway │                              │
+│                    │ (Rate Limit) │                              │
 │                    └──────┬───────┘                              │
 │                           │                                      │
 │         ┌─────────────────┼─────────────────┐                    │
 │         │                 │                 │                    │
 │  ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐              │
-│  │ User Service│  │Score Service│  │Practice Svc │              │
+│  │ Auth Routes │  │Score Routes │  │Practice Rt. │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 │                                                                  │
 │         ┌─────────────────┬─────────────────┐                    │
 │         │                 │                 │                    │
 │  ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐              │
-│  │  PostgreSQL │  │   Redis     │  │ Cloud Storage│              │
-│  │  Database   │  │   Cache     │  │  (Scores)    │              │
+│  │  PostgreSQL │  │   Redis     │  │  File Store  │              │
+│  │  (Prisma)   │  │   Cache     │  │  (Scores)    │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 │                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 
                     ┌──────────────┐
                     │ Yamaha P125  │
-                    │ (MIDI BT)    │
+                    │ (BLE MIDI)   │
                     └──────┬───────┘
                            │
-                    Bluetooth MIDI
+                    Bluetooth LE MIDI
                            │
               ┌────────────┼────────────┐
               │            │            │
-       ┌──────▼───┐ ┌──────▼───┐ ┌──────▼───┐
-       │   iOS    │ │ Android  │ │   Web    │
-       │   App    │ │   App    │ │  Admin   │
-       └──────────┘ └──────────┘ └──────────┘
+       ┌──────▼───┐ ┌──────▼───┐       │
+       │   iOS    │ │ Android  │       │
+       │   App    │ │   App    │       │
+       └──────────┘ └──────────┘       │
+                                       │
+              浏览器访问后端 API ───────┘
 ```
 
 ---
 
-## Mobile App Architecture (Flutter)
+## 2. 移动端架构 (Flutter)
 
-### Project Structure
+### 2.1 项目结构
 
 ```
 mobile/
@@ -60,206 +67,497 @@ mobile/
 │   ├── main.dart
 │   ├── app.dart
 │   │
-│   ├── core/                    # 核心模块
+│   ├── core/                         # 核心基础设施
 │   │   ├── constants/
 │   │   │   ├── app_colors.dart
 │   │   │   ├── app_strings.dart
 │   │   │   └── app_assets.dart
 │   │   ├── theme/
-│   │   │   ├── app_theme.dart
-│   │   │   └── text_styles.dart
+│   │   │   └── app_theme.dart
 │   │   ├── router/
 │   │   │   └── app_router.dart
 │   │   └── utils/
 │   │       ├── midi_utils.dart
 │   │       └── score_utils.dart
 │   │
-│   ├── features/                # 功能模块
+│   ├── features/                     # 功能模块 (Feature-based)
 │   │   ├── home/
-│   │   │   ├── pages/
+│   │   │   ├── pages/home_page.dart
 │   │   │   ├── widgets/
 │   │   │   └── providers/
 │   │   │
-│   │   ├── midi/               # MIDI 连接
-│   │   │   ├── pages/
-│   │   │   │   └── device_list_page.dart
-│   │   │   ├── providers/
-│   │   │   │   └── midi_provider.dart
-│   │   │   └── services/
-│   │   │       └── midi_service.dart
+│   │   ├── midi/                     # MIDI 连接模块
+│   │   │   ├── pages/device_list_page.dart
+│   │   │   ├── providers/midi_provider.dart
+│   │   │   └── services/midi_service.dart
 │   │   │
-│   │   ├── score/              # 乐谱模块
+│   │   ├── score/                    # 乐谱模块
 │   │   │   ├── pages/
 │   │   │   │   ├── score_library_page.dart
 │   │   │   │   └── score_view_page.dart
 │   │   │   ├── widgets/
-│   │   │   │   ├── score_renderer.dart
+│   │   │   │   ├── score_renderer.dart       # WebView + OSMD 渲染
 │   │   │   │   └── score_follow_highlight.dart
-│   │   │   ├── providers/
-│   │   │   │   └── score_provider.dart
-│   │   │   └── models/
-│   │   │       ├── score.dart
-│   │   │       └── note_event.dart
+│   │   │   ├── providers/score_provider.dart
+│   │   │   ├── models/score.dart
+│   │   │   └── services/
+│   │   │       ├── musicxml_parser.dart      # MusicXML 解析器
+│   │   │       └── score_downloader.dart     # 乐谱下载/缓存
 │   │   │
-│   │   ├── practice/           # 练习模块
+│   │   ├── practice/                 # 练习模块 (核心)
 │   │   │   ├── pages/
 │   │   │   │   ├── practice_page.dart
 │   │   │   │   └── practice_result_page.dart
 │   │   │   ├── widgets/
 │   │   │   │   ├── note_indicator.dart
 │   │   │   │   └── practice_controls.dart
-│   │   │   ├── providers/
-│   │   │   │   └── practice_provider.dart
+│   │   │   ├── providers/practice_provider.dart
 │   │   │   └── services/
-│   │   │       ├── score_follower.dart      # 乐谱跟随
-│   │   │       ├── note_evaluator.dart      # 音符评估
-│   │   │       └── practice_recorder.dart   # 练习记录
+│   │   │       ├── score_follower.dart       # 乐谱跟随引擎
+│   │   │       ├── note_evaluator.dart       # 音符评估器
+│   │   │       └── practice_session.dart     # 练习会话管理
 │   │   │
 │   │   └── profile/
-│   │       ├── pages/
+│   │       ├── pages/profile_page.dart
 │   │       └── providers/
 │   │
-│   ├── shared/                  # 共享组件
+│   ├── shared/                       # 共享组件
 │   │   ├── widgets/
-│   │   │   ├── dm_button.dart
-│   │   │   ├── dm_card.dart
-│   │   │   └── dm_loading.dart
-│   │   └── services/
-│   │       ├── api_service.dart
-│   │       └── storage_service.dart
+│   │   └── services/api_client.dart
 │   │
-│   └── data/                    # 数据层
+│   └── data/                         # 数据层
 │       ├── repositories/
-│       │   ├── score_repository.dart
-│       │   └── user_repository.dart
 │       ├── datasources/
-│       │   ├── remote/
-│       │   │   └── api_client.dart
-│       │   └── local/
-│       │       ├── database.dart
-│       │       └── cache.dart
 │       └── models/
-│           └── api_models.dart
 │
 ├── assets/
 │   ├── images/
 │   ├── fonts/
-│   └── scores/                  # 内置曲谱 (MusicXML)
-│       ├── classical/
+│   └── scores/                       # 内置 MusicXML 曲谱
+│       ├── beginner/
+│       ├── intermediate/
 │       └── popular/
 │
 ├── pubspec.yaml
 └── test/
 ```
 
----
+### 2.2 核心模块设计
 
-## Core Components
+#### 2.2.1 MIDI Service
 
-### 1. MIDI Service
+职责：管理 BLE MIDI 设备的扫描、连接和事件分发。
 
 ```dart
-// lib/features/midi/services/midi_service.dart
-
 class MidiService {
-  Stream<MidiEvent>? _midiStream;
-  
-  // 扫描设备
-  Future<List<MidiDevice>> scanDevices();
-  
-  // 连接设备
-  Future<bool> connect(MidiDevice device);
-  
-  // 断开连接
-  Future<void> disconnect();
-  
-  // 监听 MIDI 事件
-  Stream<MidiEvent> get midiStream;
-  
-  // 连接状态
+  // 单例模式
+  static final MidiService _instance = MidiService._internal();
+  factory MidiService() => _instance;
+
+  // 流式 API
   Stream<MidiConnectionState> get connectionState;
+  Stream<MidiEvent> get midiStream;
+  Stream<List<MidiDevice>> get devices;
+
+  // 操作
+  Future<List<MidiDevice>> scanDevices();
+  Future<bool> connect(MidiDevice device);
+  Future<void> disconnect();
 }
 ```
 
-### 2. Score Follower
+**MidiEvent 数据结构**:
+```dart
+class MidiEvent {
+  final MidiEventType type;  // noteOn, noteOff, controlChange
+  final int note;            // MIDI 音符号 (0-127)
+  final int velocity;        // 力度 (0-127)
+  final int channel;         // 通道 (0-15)
+  final DateTime timestamp;
+}
+```
+
+**实现要点**:
+- 使用 `flutter_midi_command` 包封装
+- Android 需要 `BLUETOOTH_CONNECT` + `BLUETOOTH_SCAN` 权限
+- iOS 需要 `NSBluetoothAlwaysUsageDescription`
+- 断线重连：最多 3 次，间隔 2 秒，指数退避
+- MIDI 事件通过 `StreamController.broadcast()` 分发，支持多个订阅者
+
+#### 2.2.2 Score Follower (乐谱跟随引擎)
+
+职责：实时跟踪用户弹奏位置，输出当前进度和翻页信号。
 
 ```dart
-// lib/features/practice/services/score_follower.dart
-
 class ScoreFollower {
   final Score score;
-  int _currentNoteIndex = 0;
-  int _currentMeasure = 0;
-  
-  // 处理 MIDI 事件
-  void processMidiEvent(MidiEvent event);
-  
-  // 获取当前应该弹奏的音符
-  Note get currentExpectedNote;
-  
-  // 获取当前小节
-  int get currentMeasure;
-  
-  // 是否需要翻页
-  bool get needsPageTurn;
-  
-  // 进度流
   Stream<PracticeProgress> get progressStream;
+
+  void processMidiEvent(NoteEvent event);
+  Note? getCurrentExpectedNote();
+  List<Note> getUpcomingNotes({int count = 5});
+  void jumpToMeasure(int measureNumber);
+  void reset();
 }
 ```
 
-### 3. Note Evaluator
+**跟随算法设计 (Phase 1)**:
+
+```
+输入: NoteEvent (来自 MIDI)
+输出: PracticeProgress (位置、进度、翻页信号)
+
+核心逻辑:
+1. 获取当前期望音符 expectedNote
+2. 比较 event.noteNumber 与 expectedNote.pitchNumber
+3. 匹配分支:
+   a. 完全匹配 → 前进到下一个音符
+   b. 不匹配 → 进入容错模式
+4. 容错模式:
+   - 等待 toleranceMs (默认 1500ms)
+   - 期间如果用户弹出正确音符 → 回到正常模式
+   - 超时仍未匹配 → 标记 expectedNote 为遗漏，跳过继续
+5. 更新进度，检测翻页需求
+
+和弦处理:
+- 当下一个 expectedNote 是和弦（多个音符同一 startMs）时
+- 收集同一时间窗口内（±300ms）的所有 NoteEvent
+- 将集合与和弦音符集合对比
+- 匹配率 > 50% 视为通过
+```
+
+**容错机制设计**:
+```dart
+class FollowerConfig {
+  final int toleranceMs;         // 单音符容错等待时间 (默认 1500ms)
+  final int chordWindowMs;       // 和弦时间窗口 (默认 300ms)
+  final double chordMatchRatio;  // 和弦最低匹配率 (默认 0.5)
+  final int maxSkips;            // 最大连续跳过数 (默认 3)
+}
+```
+
+#### 2.2.3 Note Evaluator (音符评估器)
+
+职责：对比期望音符和实际弹奏，生成评估结果。
 
 ```dart
-// lib/features/practice/services/note_evaluator.dart
-
 class NoteEvaluator {
-  // 评估音符
   NoteEvaluation evaluate({
     required Note expected,
-    required Note played,
-    required Duration timing,
+    required NoteEvent played,
+    required int expectedStartTimeMs,
+    required int playedStartTimeMs,
   });
-  
-  // 生成练习报告
-  PracticeReport generateReport(List<NoteEvaluation> evaluations);
-}
 
-class NoteEvaluation {
-  final bool isCorrect;        // 音准
-  final double timingAccuracy; // 节奏准确度 0-1
-  final Duration deviation;    // 偏差时长
+  PracticeReport generateReport({
+    required String scoreId,
+    required DateTime startTime,
+    required DateTime endTime,
+    required List<NoteEvaluation> evaluations,
+  });
 }
+```
 
-class PracticeReport {
-  final int totalNotes;
-  final int correctNotes;
-  final double timingScore;
-  final double pitchScore;
-  final double overallScore;
-}
+**评分算法**:
+```
+音准分 = (正确音符数 / 总音符数) × 100
+
+节奏分:
+  偏差 <= 200ms → 1.0
+  偏差 <= 400ms → 0.8
+  偏差 <= 600ms → 0.6
+  偏差 > 600ms  → 0.4
+  节奏分 = 所有音符节奏准确度的平均值 × 100
+
+综合分 = 音准分 × 0.6 + 节奏分 × 0.4
+
+等级: S(>=95) A(>=90) B(>=80) C(>=70) D(>=60) F(<60)
+```
+
+#### 2.2.4 MusicXML Parser (音乐 XML 解析器)
+
+职责：将 MusicXML 文件解析为 Score 数据模型。
+
+```
+MusicXML File
+    │
+    ├── XML 解析 (package:xml)
+    │     └── 提取 <score-partwise> 结构
+    │
+    ├── 元数据提取
+    │     ├── title, composer, movement-title
+    │     ├── key (fifths + mode)
+    │     ├── time (beats + beat-type)
+    │     └── divisions (每四分音符的 tick 数)
+    │
+    ├── 音符解析
+    │     ├── pitch → Note (step + alter + octave → pitchNumber)
+    │     ├── duration → Note.duration
+    │     ├── type → Note.type (whole, half, quarter, eighth...)
+    │     └── rest / chord 标记
+    │
+    ├── 时间轴计算
+    │     └── 基于 divisions 和 tempo 生成每个音符的 startMs
+    │
+    └── 输出 Score 对象 (含所有 Part/Measure/Note)
+```
+
+**关键转换**:
+```dart
+// MusicXML pitch → MIDI pitchNumber
+// step(C=0..6) + alter(-1/0/+1) + octave → (octave+1)*12 + noteIndex
+
+// duration → 毫秒
+// startMs = cumulativeDuration / divisions × (60000 / tempo)
+
+// 示例: divisions=4, tempo=120
+// 四分音符 duration=4 → 4/4 × 60000/120 = 500ms
+```
+
+#### 2.2.5 Score Renderer (乐谱渲染)
+
+Phase 1 方案: **WebView + OpenSheetMusicDisplay (OSMD)**
+
+```
+┌─────────────────────────────┐
+│       Flutter WebView       │
+│  ┌───────────────────────┐  │
+│  │     HTML + JS         │  │
+│  │  ┌─────────────────┐  │  │
+│  │  │      OSMD       │  │  │
+│  │  │  (渲染 MusicXML) │  │  │
+│  │  └─────────────────┘  │  │
+│  │                       │  │
+│  │  JavaScript Bridge    │  │
+│  │  - render(xml)        │  │
+│  │  - highlight(measure) │  │
+│  │  - scrollTo(position) │  │
+│  │  - getPositions()     │  │
+│  └───────────┬───────────┘  │
+│              │ JS Channel    │
+└──────────────┼──────────────┘
+               │
+    Flutter Dart 控制层
+    - score_renderer.dart
+    - 高亮控制 / 翻页 / 缩放
+```
+
+**OSMD 集成要点**:
+- HTML 模板内嵌 OSMD JS 库
+- 通过 `webview_flutter` 的 JavaScript Channel 双向通信
+- Flutter → JS: 发送 MusicXML 数据、高亮指令
+- JS → Flutter: 返回音符位置坐标、渲染完成信号
+
+### 2.3 关键依赖
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 状态管理
+  flutter_riverpod: ^2.4.0
+
+  # MIDI
+  flutter_midi_command: ^0.5.2
+
+  # 网络
+  dio: ^5.4.0
+  retrofit: ^4.0.3
+
+  # 本地存储
+  hive_flutter: ^1.1.0
+
+  # XML 解析
+  xml: ^6.5.0
+
+  # WebView (乐谱渲染)
+  webview_flutter: ^4.4.2
+
+  # UI
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.0
+
+  # 工具
+  uuid: ^4.2.1
+  path_provider: ^2.1.1
+  logger: ^2.0.2+1
 ```
 
 ---
 
-## Data Models
+## 3. 后端架构 (Express + TypeScript)
 
-### Score (MusicXML 解析后)
+### 3.1 项目结构
+
+```
+server/
+├── src/
+│   ├── index.ts              # 入口，Express 应用配置
+│   │
+│   ├── routes/               # 路由层
+│   │   ├── auth.ts           # POST /register, /login, /logout
+│   │   ├── scores.ts         # CRUD + 搜索 + 上传
+│   │   ├── practice.ts       # ⚠️ 待实现 - 练习记录 API
+│   │   └── devices.ts        # 设备管理
+│   │
+│   ├── services/             # 业务逻辑层
+│   │   ├── score.service.ts  # 乐谱业务逻辑
+│   │   ├── auth.service.ts   # 认证逻辑 (待补充)
+│   │   └── practice.service.ts # ⚠️ 待创建
+│   │
+│   ├── middleware/
+│   │   ├── validate.ts       # 请求验证中间件
+│   │   ├── error.ts          # 错误处理
+│   │   └── notFound.ts       # 404 处理
+│   │
+│   ├── utils/
+│   │   └── logger.ts         # Winston 日志
+│   │
+│   └── scripts/
+│       ├── seed.ts           # 数据库初始化
+│       └── import-scores.ts  # 乐谱数据导入
+│
+├── prisma/
+│   ├── schema.prisma         # 数据模型
+│   └── dev.db                # SQLite (开发)
+│
+├── .env.example
+├── package.json
+└── tsconfig.json
+```
+
+### 3.2 数据模型 (Prisma Schema)
+
+```prisma
+model Score {
+  id              String    @id @default(uuid())
+  title           String
+  composer        String
+  difficulty      String    @default("BEGINNER")  // BEGINNER | INTERMEDIATE | ADVANCED
+  musicXmlPath    String
+  fileSize        Int
+  duration        Int       // 预估时长 (秒)
+  measures        Int       // 小节数
+  timeSignature   String    @default("4/4")
+  keySignature    String    @default("C Major")
+  tempo           Int       @default(120)  // BPM
+  category        String?
+  tags            Tag[]
+  playCount       Int       @default(0)
+  favoriteCount   Int       @default(0)
+  status          String    @default("DRAFT")  // DRAFT | PUBLISHED | ARCHIVED
+  isPublic        Boolean   @default(true)
+  source          String?
+  license         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  publishedAt     DateTime?
+  practiceRecords PracticeRecord[]
+  favorites       User[]    @relation("UserFavorites")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String    // bcrypt hash
+  nickname         String?
+  avatar           String?
+  totalPracticeTime Int      @default(0)
+  totalSessions    Int       @default(0)
+  totalNotes       Int       @default(0)
+  practiceRecords  PracticeRecord[]
+  favorites        Score[]   @relation("UserFavorites")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model PracticeRecord {
+  id            String   @id @default(uuid())
+  userId        String
+  scoreId       String
+  duration      Int      // 秒
+  notesPlayed   Int
+  pitchScore    Float    // 0-100
+  rhythmScore   Float    // 0-100
+  overallScore  Float    // 0-100
+  grade         String   // S, A, B, C, D, F
+  details       String?  // JSON: 完整评估数据
+  startedAt     DateTime
+  completedAt   DateTime @default(now())
+  user          User     @relation(...)
+  score         Score    @relation(...)
+}
+
+model Tag {
+  id     String @id @default(uuid())
+  name   String @unique
+  scores Score[]
+}
+```
+
+### 3.3 API Endpoints (已实现 + 待实现)
+
+| 状态 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| ✅ | GET | `/health` | 健康检查 |
+| ✅ | POST | `/api/auth/register` | 用户注册 |
+| ✅ | POST | `/api/auth/login` | 用户登录 |
+| ✅ | POST | `/api/auth/logout` | 用户登出 |
+| ✅ | GET | `/api/scores` | 乐谱列表 (分页/筛选) |
+| ✅ | GET | `/api/scores/recommended` | 推荐乐谱 |
+| ✅ | GET | `/api/scores/search` | 搜索乐谱 |
+| ✅ | GET | `/api/scores/:id` | 乐谱详情 |
+| ✅ | POST | `/api/scores` | 上传乐谱 (MusicXML) |
+| ✅ | PATCH | `/api/scores/:id` | 更新乐谱 |
+| ✅ | POST | `/api/scores/:id/publish` | 发布乐谱 |
+| ✅ | DELETE | `/api/scores/:id` | 删除乐谱 |
+| ⚠️ | POST | `/api/practice/start` | 开始练习 - **TODO** |
+| ⚠️ | POST | `/api/practice/:id/note` | 上传音符事件 - **TODO** |
+| ⚠️ | POST | `/api/practice/:id/end` | 结束练习 - **TODO** |
+| ⚠️ | GET | `/api/practice/history` | 练习历史 - **TODO** |
+| ⚠️ | GET | `/api/practice/stats` | 统计数据 - **TODO** |
+| ✅ | GET | `/api/devices` | 设备列表 |
+
+### 3.4 中间件
+
+- **Helmet**: 安全 HTTP 头
+- **CORS**: 跨域配置（可配置 origin）
+- **Rate Limiting**: `/api/` 路径 15 分钟 100 次
+- **express-validator**: 请求参数校验
+- **Winston**: 结构化日志
+- **Multer**: 文件上传（限 10MB，仅 MusicXML 格式）
+
+### 3.5 数据库策略
+
+| 环境 | 数据库 | 说明 |
+|------|--------|------|
+| 开发 | SQLite | 轻量，`prisma/dev.db` |
+| 生产 | PostgreSQL | 需在 `.env` 中配置 `DATABASE_URL` |
+| 缓存 | Redis | 已引入 `ioredis` 依赖，待集成 |
+
+**迁移路径**: Prisma 支持同一 schema 切换 provider，迁移文件从 SQLite → PostgreSQL 无需修改 schema，只需更换 `datasource.db`。
+
+---
+
+## 4. 音乐数据模型
+
+### 4.1 乐谱数据模型 (Dart)
 
 ```dart
 class Score {
   final String id;
   final String title;
   final String composer;
-  final String difficulty;  // beginner, intermediate, advanced
-  final List<Part> parts;
-  final Duration duration;
-  final String? coverImage;
+  final String difficulty;    // beginner | intermediate | advanced
+  final List<Part> parts;     // 声部
+  final int totalMeasures;
+  final Duration estimatedDuration;
   final String musicXmlPath;
 }
 
 class Part {
-  final String name;
+  final String name;          // 如 "Piano", "P1"
   final List<Measure> measures;
 }
 
@@ -271,156 +569,81 @@ class Measure {
 }
 
 class Note {
-  final String pitch;      // C4, D#5, etc.
-  final Duration duration;
-  final Duration startTime;
+  final String pitch;         // "C4", "D#5"
+  final int pitchNumber;      // MIDI 音符号 (0-127)
+  final double duration;      // 以四分音符为单位 (1.0 = 四分音符)
+  final int startMs;          // 从曲首开始的毫秒数
   final int measureNumber;
-  final int staffPosition; // 用于定位渲染位置
 }
 ```
 
----
+### 4.2 MIDI 音符 ↔ 名称映射
 
-## Key Dependencies
+```
+MIDI pitchNumber = (octave + 1) × 12 + noteIndex
 
-### pubspec.yaml
+noteIndex: C=0, C#=1, D=2, D#=3, E=4, F=5, F#=6, G=7, G#=8, A=9, A#=10, B=11
 
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  
-  # State Management
-  flutter_riverpod: ^2.4.0
-  
-  # MIDI
-  flutter_midi_command: ^0.5.0
-  
-  # Network
-  dio: ^5.4.0
-  
-  # Storage
-  sqflite: ^2.3.0
-  shared_preferences: ^2.2.0
-  
-  # MusicXML Parsing
-  xml: ^6.5.0
-  
-  # UI
-  flutter_svg: ^2.0.0
-  cached_network_image: ^3.3.0
-  
-  # Utils
-  path_provider: ^2.1.0
-  permission_handler: ^11.0.0
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^3.0.0
+示例: A4 (440Hz) → (4+1)×12 + 9 = 69
+      C4 (中央C) → (4+1)×12 + 0 = 60
 ```
 
 ---
 
-## Score Rendering Strategy
+## 5. 构建与部署
 
-### Phase 1: WebView + OpenSheetMusicDisplay
+### 5.1 移动端
 
-```
-Flutter WebView
-      │
-      ▼
-┌─────────────────┐
-│      HTML       │
-│  ┌───────────┐  │
-│  │   OSMD    │  │
-│  │ Renderer  │  │
-│  └───────────┘  │
-│                 │
-│  JavaScript     │
-│  Bridge         │
-└────────┬────────┘
-         │
-         ▼
-    Flutter Dart
-    (Highlight Control)
+| 平台 | 构建方式 | 分发 |
+|------|----------|------|
+| Android | `flutter build apk` / `flutter build appbundle` | Google Play |
+| iOS | `flutter build ios` (需 macOS) | App Store |
+
+### 5.2 后端
+
+```bash
+# 开发
+cd server && npm run dev
+
+# 生产构建
+npm run build  # tsc 编译
+npm start      # node dist/index.js
+
+# 数据库
+npm run db:migrate  # prisma migrate dev
+npm run db:seed     # 初始化种子数据
+npm run scores:import  # 导入乐谱数据
 ```
 
-### Phase 2: Custom Flutter Renderer (可选)
+### 5.3 部署方案
 
-```
-MusicXML → Parser → NotePositions → CustomPainter
-```
+| 组件 | 推荐方案 | 备选 |
+|------|----------|------|
+| 后端 | Railway / Vercel | 阿里云 / 腾讯云 ECS |
+| 数据库 | PostgreSQL (云托管) | 自建 |
+| 文件存储 | 阿里云 OSS / 腾讯云 COS | 本地 + CDN |
+| Redis | 云托管 Redis | 自建 |
 
 ---
 
-## Backend Architecture (Web Admin)
+## 6. 当前实现状态
 
-```
-server/
-├── src/
-│   ├── modules/
-│   │   ├── user/           # 用户管理
-│   │   ├── score/          # 乐谱服务
-│   │   ├── practice/       # 练习记录
-│   │   └── feedback/       # Bug 跟踪
-│   │
-│   ├── core/
-│   │   ├── config/
-│   │   ├── middleware/
-│   │   └── utils/
-│   │
-│   └── app.ts
-│
-├── prisma/
-│   └── schema.prisma
-│
-└── package.json
-```
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| Express 服务框架 | ✅ | 完整中间件链 |
+| Auth 路由 | ✅ | 注册/登录/登出 |
+| Score CRUD | ✅ | 完整 REST API |
+| 文件上传 | ✅ | Multer + MusicXML 过滤 |
+| Prisma Schema | ✅ | 5 个模型，关系完整 |
+| 乐谱种子数据 | ✅ | 30 首已导入 |
+| Practice 路由 | ⚠️ | 空壳，端点为 TODO |
+| MIDI Service | ⚠️ | Dart 框架 + 流式 API，底层蓝牙待实现 |
+| Score Follower | ⚠️ | 简单音符匹配，缺少容错/和弦支持 |
+| Note Evaluator | ✅ | 评分逻辑完整 |
+| MusicXML Parser | ❌ | 需实现 |
+| 乐谱渲染 (OSMD) | ❌ | 需实现 |
+| 练习会话管理 | ❌ | 需实现 |
 
 ---
 
-## API Endpoints
-
-### Auth
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /auth/logout`
-
-### Scores
-- `GET /scores` - 获取曲谱列表
-- `GET /scores/:id` - 获取曲谱详情
-- `GET /scores/:id/xml` - 下载 MusicXML
-- `POST /scores/:id/favorite` - 收藏
-
-### Practice
-- `POST /practice/start` - 开始练习
-- `POST /practice/:id/note` - 上传音符事件
-- `POST /practice/:id/end` - 结束练习
-- `GET /practice/history` - 练习历史
-
-### User
-- `GET /user/profile`
-- `PUT /user/profile`
-- `GET /user/favorites`
-- `GET /user/statistics`
-
----
-
-## Deployment
-
-### Mobile Apps
-- iOS: App Store Connect
-- Android: Google Play Console
-
-### Backend
-- 推荐方案：
-  - Vercel / Railway (快速部署)
-  - 阿里云 / 腾讯云 (国内用户)
-
-### Database
-- PostgreSQL (主数据库)
-- Redis (缓存)
-
-### Storage
-- 阿里云 OSS / 腾讯云 COS (曲谱文件)
+*架构负责人: 项目团队 | 更新: 2026-03-20*
