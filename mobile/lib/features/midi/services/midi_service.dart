@@ -188,7 +188,7 @@ class MidiService {
       });
 
       await Future.delayed(const Duration(seconds: 3));
-      await _midiCommand.stopScanningForBluetoothDevices();
+      _midiCommand.stopScanningForBluetoothDevices();
       await _refreshBleDeviceList();
     } catch (e) {
       debugPrint('[MidiService] BLE scan failed: $e');
@@ -248,8 +248,8 @@ class MidiService {
 
   String _getUsbDeviceName(UsbDevice device) {
     // UsbDevice 可能没有友好名称，用 VID/PID 构造
-    final vid = device.vid;
-    final pid = device.pid;
+    final vid = device.vid ?? 0;
+    final pid = device.pid ?? 0;
     final knownNames = <String, String>{
       '0499': 'Yamaha',
       '0582': 'Roland',
@@ -268,7 +268,7 @@ class MidiService {
     if (knownVids.contains(device.vid)) return true;
 
     // 设备类判断 (如果接口信息可用)
-    if (device.interfaceCount > 0) return true; // 有接口的 USB 设备都尝试连接
+    if ((device.interfaceCount ?? 0) > 0) return true; // 有接口的 USB 设备都尝试连接
 
     return false;
   }
@@ -595,7 +595,7 @@ class MidiService {
           final rawId = _connectedDevice!.id.replaceAll('ble_', '');
           for (final d in midiDevices) {
             if (d.id == rawId) {
-              await _midiCommand.disconnectDevice(d);
+              _midiCommand.disconnectDevice(d);
               break;
             }
           }

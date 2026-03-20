@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
-import '../../data/repositories/auth_repository.dart';
+import '../../../data/repositories/auth_repository.dart';
 
 /// 登录/注册页面
 class AuthPage extends StatefulWidget {

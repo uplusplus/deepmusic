@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../midi/providers/midi_provider.dart';
+import '../../midi/services/midi_service.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/constants/app_colors.dart';
 

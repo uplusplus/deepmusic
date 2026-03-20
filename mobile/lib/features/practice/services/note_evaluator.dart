@@ -1,4 +1,4 @@
-import '../models/score.dart';
+import '../../score/models/score.dart';
 import 'note_event.dart';
 
 /// 音符评估结果
