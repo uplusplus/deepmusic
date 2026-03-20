@@ -1,47 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/router/app_router.dart';
+import '../../../data/providers/score_provider.dart';
+import '../../../data/repositories/score_repository.dart';
 
-class ScoreLibraryPage extends StatefulWidget {
+class ScoreLibraryPage extends ConsumerStatefulWidget {
   const ScoreLibraryPage({super.key});
 
   @override
-  State<ScoreLibraryPage> createState() => _ScoreLibraryPageState();
+  ConsumerState<ScoreLibraryPage> createState() => _ScoreLibraryPageState();
 }
 
-class _ScoreLibraryPageState extends State<ScoreLibraryPage> 
+class _ScoreLibraryPageState extends ConsumerState<ScoreLibraryPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _searchQuery = '';
 
-  // TODO: 从数据源加载曲谱
-  final List<Map<String, dynamic>> _mockScores = [
-    {
-      'id': '1',
-      'title': '致爱丽丝',
-      'composer': '贝多芬',
-      'difficulty': 'beginner',
-      'duration': '3:00',
-    },
-    {
-      'id': '2',
-      'title': '小步舞曲',
-      'composer': '巴赫',
-      'difficulty': 'beginner',
-      'duration': '2:00',
-    },
-    {
-      'id': '3',
-      'title': '梦幻曲',
-      'composer': '舒曼',
-      'difficulty': 'intermediate',
-      'duration': '3:30',
-    },
-  ];
+  final List<String> _categories = ['全部', '古典', '流行', '影视', '民歌', '爵士'];
+  String _selectedCategory = '全部';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: _categories.length, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {
+          _selectedCategory = _categories[_tabController.index];
+        });
+      }
+    });
   }
 
   @override
@@ -57,11 +46,8 @@ class _ScoreLibraryPageState extends State<ScoreLibraryPage>
         title: const Text('乐谱库'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '全部'),
-            Tab(text: '古典'),
-            Tab(text: '流行'),
-          ],
+          isScrollable: true,
+          tabs: _categories.map((c) => Tab(text: c)).toList(),
         ),
         actions: [
           IconButton(
@@ -70,83 +56,92 @@ class _ScoreLibraryPageState extends State<ScoreLibraryPage>
           ),
         ],
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: _searchQuery.isNotEmpty
+          ? _buildSearchResults()
+          : _buildCategoryList(),
+    );
+  }
+
+  Widget _buildCategoryList() {
+    final category = _selectedCategory == '全部' ? null : _selectedCategory;
+    final scoresAsync = ref.watch(
+      scoreListProvider(ScoreListParams(category: category, limit: 50)),
+    );
+
+    return scoresAsync.when(
+      data: (result) {
+        if (result.scores.isEmpty) {
+          return _buildEmptyState('暂无${_selectedCategory}曲谱');
+        }
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(scoreListProvider);
+          },
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: result.scores.length,
+            itemBuilder: (context, index) => _buildScoreCard(result.scores[index]),
+          ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => _buildErrorState(error.toString()),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    final scoresAsync = ref.watch(scoreSearchProvider(_searchQuery));
+
+    return scoresAsync.when(
+      data: (scores) {
+        if (scores.isEmpty) {
+          return _buildEmptyState('未找到 "$_searchQuery" 相关曲谱');
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: scores.length,
+          itemBuilder: (context, index) => _buildScoreCard(scores[index]),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => _buildErrorState(error.toString()),
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildScoreList(),
-          _buildScoreList(filter: '古典'),
-          _buildScoreList(filter: '流行'),
+          const Icon(Icons.music_note_outlined, size: 64, color: AppColors.textHint),
+          const SizedBox(height: 16),
+          Text(message, style: const TextStyle(color: AppColors.textSecondary)),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // TODO: 实现上传乐谱
-        },
-        icon: const Icon(Icons.upload),
-        label: const Text('上传乐谱'),
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+          const SizedBox(height: 16),
+          Text('加载失败', style: const TextStyle(color: AppColors.error)),
+          const SizedBox(height: 8),
+          Text(error, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => ref.invalidate(scoreListProvider),
+            child: const Text('重试'),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildScoreList({String? filter}) {
-    final scores = _mockScores.where((score) {
-      if (filter != null) {
-        // TODO: 实现实际的分类筛选
-        return true;
-      }
-      if (_searchQuery.isNotEmpty) {
-        return score['title'].toString().toLowerCase().contains(
-          _searchQuery.toLowerCase(),
-        );
-      }
-      return true;
-    }).toList();
-
-    if (scores.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.music_note_outlined, size: 64, color: AppColors.textHint),
-            SizedBox(height: 16),
-            Text(
-              '暂无曲谱',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: scores.length,
-      itemBuilder: (context, index) => _buildScoreCard(scores[index]),
-    );
-  }
-
-  Widget _buildScoreCard(Map<String, dynamic> score) {
-    Color difficultyColor;
-    String difficultyText;
-    
-    switch (score['difficulty']) {
-      case 'beginner':
-        difficultyColor = AppColors.success;
-        difficultyText = '初级';
-        break;
-      case 'intermediate':
-        difficultyColor = AppColors.warning;
-        difficultyText = '中级';
-        break;
-      case 'advanced':
-        difficultyColor = AppColors.error;
-        difficultyText = '高级';
-        break;
-      default:
-        difficultyColor = AppColors.textSecondary;
-        difficultyText = '未知';
-    }
-
+  Widget _buildScoreCard(ScoreModel score) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -177,35 +172,32 @@ class _ScoreLibraryPageState extends State<ScoreLibraryPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      score['title'],
+                      score.title,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      score['composer'],
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                      ),
+                      score.composer,
+                      style: const TextStyle(color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: difficultyColor.withOpacity(0.1),
+                            color: score.difficultyColor.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            difficultyText,
+                            score.difficultyText,
                             style: TextStyle(
-                              color: difficultyColor,
+                              color: score.difficultyColor,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -213,21 +205,25 @@ class _ScoreLibraryPageState extends State<ScoreLibraryPage>
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          score['duration'],
-                          style: const TextStyle(
-                            color: AppColors.textHint,
-                            fontSize: 12,
-                          ),
+                          score.formattedDuration,
+                          style: const TextStyle(color: AppColors.textHint, fontSize: 12),
                         ),
+                        const SizedBox(width: 8),
+                        if (score.playCount > 0)
+                          Text(
+                            '♪ ${score.playCount}',
+                            style: const TextStyle(color: AppColors.textHint, fontSize: 12),
+                          ),
                       ],
                     ),
                   ],
                 ),
               ),
-              // 操作按钮
+              // 播放按钮
               IconButton(
                 icon: const Icon(Icons.play_circle_outline),
                 color: AppColors.primary,
+                iconSize: 36,
                 onPressed: () => _startPractice(score),
               ),
             ],
@@ -253,10 +249,21 @@ class _ScoreLibraryPageState extends State<ScoreLibraryPage>
               _searchQuery = value;
             });
           },
+          onSubmitted: (value) {
+            Navigator.pop(context);
+            setState(() {
+              _searchQuery = value;
+            });
+          },
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                _searchQuery = '';
+              });
+            },
             child: const Text('取消'),
           ),
           TextButton(
@@ -271,17 +278,17 @@ class _ScoreLibraryPageState extends State<ScoreLibraryPage>
     );
   }
 
-  void _openScore(Map<String, dynamic> score) {
+  void _openScore(ScoreModel score) {
     Navigator.of(context).pushNamed(
       AppRouter.scoreView,
-      arguments: {'id': score['id']},
+      arguments: {'id': score.id},
     );
   }
 
-  void _startPractice(Map<String, dynamic> score) {
+  void _startPractice(ScoreModel score) {
     Navigator.of(context).pushNamed(
       AppRouter.practice,
-      arguments: {'scoreId': score['id']},
+      arguments: {'scoreId': score.id},
     );
   }
 }

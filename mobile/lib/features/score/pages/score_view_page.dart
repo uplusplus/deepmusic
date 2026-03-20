@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../../core/router/app_router.dart';
+import '../../../data/providers/score_provider.dart';
+import '../../../data/repositories/score_repository.dart';
 
-class ScoreViewPage extends StatefulWidget {
+class ScoreViewPage extends ConsumerStatefulWidget {
   final String scoreId;
 
   const ScoreViewPage({
@@ -9,29 +14,65 @@ class ScoreViewPage extends StatefulWidget {
   });
 
   @override
-  State<ScoreViewPage> createState() => _ScoreViewPageState();
+  ConsumerState<ScoreViewPage> createState() => _ScoreViewPageState();
 }
 
-class _ScoreViewPageState extends State<ScoreViewPage> {
+class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
+  bool _isFavorite = false;
   int _currentPage = 1;
-  int _totalPages = 4;
 
   @override
   Widget build(BuildContext context) {
+    final scoreAsync = ref.watch(scoreDetailProvider(widget.scoreId));
+
+    return scoreAsync.when(
+      data: (score) => _buildScoreView(score),
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('加载中...')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => Scaffold(
+        appBar: AppBar(title: const Text('加载失败')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+              const SizedBox(height: 16),
+              Text(error.toString()),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(scoreDetailProvider),
+                child: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScoreView(ScoreModel score) {
+    final totalPages = (score.measures / 4).ceil().clamp(1, 999);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('致爱丽丝'),
+        title: Text(score.title),
         actions: [
           IconButton(
-            icon: const Icon(Icons.favorite_border),
+            icon: Icon(_isFavorite ? Icons.favorite : Icons.favorite_border),
+            color: _isFavorite ? AppColors.error : null,
             onPressed: () {
-              // TODO: 收藏
+              setState(() {
+                _isFavorite = !_isFavorite;
+              });
+              // TODO: 调用收藏 API
             },
           ),
           IconButton(
-            icon: const Icon(Icons.download),
+            icon: const Icon(Icons.share),
             onPressed: () {
-              // TODO: 下载
+              // TODO: 分享
             },
           ),
         ],
@@ -44,41 +85,65 @@ class _ScoreViewPageState extends State<ScoreViewPage> {
             color: Theme.of(context).colorScheme.surface,
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '贝多芬',
-                        style: TextStyle(
+                        score.composer,
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
-                        'A Minor · 3/8 · 125 BPM',
-                        style: TextStyle(
-                          color: Colors.grey,
-                        ),
+                        '${score.keySignature} · ${score.timeSignature} · ${score.tempo} BPM',
+                        style: const TextStyle(color: Colors.grey),
                       ),
+                      if (score.category != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          score.category!,
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
+                    color: score.difficultyColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Text(
-                    '初级',
-                    style: TextStyle(color: Colors.green),
+                  child: Text(
+                    score.difficultyText,
+                    style: TextStyle(color: score.difficultyColor),
                   ),
                 ),
+              ],
+            ),
+          ),
+
+          // 统计信息栏
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppColors.divider),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildInfoChip(Icons.music_note, '${score.measures} 小节'),
+                _buildInfoChip(Icons.timer, score.formattedDuration),
+                _buildInfoChip(Icons.play_circle_outline, '${score.playCount} 次'),
+                _buildInfoChip(Icons.favorite, '${score.favoriteCount}'),
               ],
             ),
           ),
@@ -91,19 +156,26 @@ class _ScoreViewPageState extends State<ScoreViewPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.music_note,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.music_note, size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text('乐谱渲染区域'),
+                    Text(
+                      score.title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     Text(
-                      '第 $_currentPage / $_totalPages 页',
+                      '$_currentPage / $totalPages 页',
                       style: const TextStyle(color: Colors.grey),
                     ),
-                    // TODO: 集成 OSMD WebView
+                    const SizedBox(height: 16),
+                    const Text(
+                      '乐谱渲染 (OSMD WebView)',
+                      style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                    ),
+                    // TODO: 集成 OSMD WebView 渲染
                   ],
                 ),
               ),
@@ -113,6 +185,11 @@ class _ScoreViewPageState extends State<ScoreViewPage> {
           // 页面导航
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: AppColors.divider),
+              ),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -122,10 +199,10 @@ class _ScoreViewPageState extends State<ScoreViewPage> {
                       ? () => setState(() => _currentPage--)
                       : null,
                 ),
-                Text('$_currentPage / $_totalPages'),
+                Text('$_currentPage / $totalPages 页'),
                 IconButton(
                   icon: const Icon(Icons.chevron_right),
-                  onPressed: _currentPage < _totalPages
+                  onPressed: _currentPage < totalPages
                       ? () => setState(() => _currentPage++)
                       : null,
                 ),
@@ -134,24 +211,41 @@ class _ScoreViewPageState extends State<ScoreViewPage> {
           ),
         ],
       ),
-      bottomNavigationBar: Container(
-        padding: const EdgeInsets.all(16),
-        child: ElevatedButton.icon(
-          onPressed: () => _startPractice(),
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('开始练习'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: ElevatedButton.icon(
+            onPressed: () => _startPractice(score),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('开始练习'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              textStyle: const TextStyle(fontSize: 18),
+            ),
           ),
         ),
       ),
     );
   }
 
-  void _startPractice() {
+  Widget _buildInfoChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: AppColors.textHint),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  void _startPractice(ScoreModel score) {
     Navigator.of(context).pushNamed(
-      '/practice',
-      arguments: {'scoreId': widget.scoreId},
+      AppRouter.practice,
+      arguments: {'scoreId': score.id},
     );
   }
 }
