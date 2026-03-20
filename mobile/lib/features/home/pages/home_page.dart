@@ -192,18 +192,14 @@ class HomePage extends ConsumerWidget {
         title: '练习记录',
         subtitle: '查看历史',
         color: AppColors.info,
-        onTap: () {
-          // TODO: 实现练习记录
-        },
+        onTap: () => Navigator.of(context).pushNamed(AppRouter.practiceHistory),
       ),
       _QuickStartItem(
         icon: Icons.trending_up,
         title: '学习统计',
         subtitle: '查看进度',
         color: AppColors.warning,
-        onTap: () {
-          // TODO: 实现学习统计
-        },
+        onTap: () => Navigator.of(context).pushNamed(AppRouter.statistics),
       ),
     ];
 

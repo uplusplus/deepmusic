@@ -1,21 +1,27 @@
 import 'package:flutter/material.dart';
+import '../../features/auth/pages/auth_page.dart';
 import '../../features/home/pages/home_page.dart';
 import '../../features/midi/pages/device_list_page.dart';
 import '../../features/score/pages/score_library_page.dart';
 import '../../features/score/pages/score_view_page.dart';
 import '../../features/practice/pages/practice_page.dart';
+import '../../features/practice/pages/practice_history_page.dart';
+import '../../features/practice/pages/statistics_page.dart';
 import '../../features/profile/pages/profile_page.dart';
-import '../../data/repositories/score_repository.dart';
+import '../../data/repositories/auth_repository.dart';
 
 class AppRouter {
   AppRouter._();
 
   static const String splash = '/';
+  static const String auth = '/auth';
   static const String home = '/home';
   static const String devices = '/devices';
   static const String scoreLibrary = '/scores';
   static const String scoreView = '/scores/:id';
   static const String practice = '/practice/:scoreId';
+  static const String practiceHistory = '/practice-history';
+  static const String statistics = '/statistics';
   static const String profile = '/profile';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
@@ -23,6 +29,11 @@ class AppRouter {
       case splash:
         return MaterialPageRoute(
           builder: (_) => const SplashPage(),
+          settings: settings,
+        );
+      case auth:
+        return MaterialPageRoute(
+          builder: (_) => const AuthPage(),
           settings: settings,
         );
       case home:
@@ -56,6 +67,16 @@ class AppRouter {
           ),
           settings: settings,
         );
+      case practiceHistory:
+        return MaterialPageRoute(
+          builder: (_) => const PracticeHistoryPage(),
+          settings: settings,
+        );
+      case statistics:
+        return MaterialPageRoute(
+          builder: (_) => const StatisticsPage(),
+          settings: settings,
+        );
       case profile:
         return MaterialPageRoute(
           builder: (_) => const ProfilePage(),
@@ -70,29 +91,47 @@ class AppRouter {
   }
 }
 
-// Placeholder pages
-class SplashPage extends StatelessWidget {
+/// 启动页 — 检查登录状态后跳转
+class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.of(context).pushReplacementNamed(AppRouter.home);
-    });
+  State<SplashPage> createState() => _SplashPageState();
+}
 
+class _SplashPageState extends State<SplashPage> {
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    // 最少显示 1.5 秒启动画面
+    await Future.delayed(const Duration(milliseconds: 1500));
+
+    if (!mounted) return;
+
+    final authRepo = AuthRepository();
+    final isLoggedIn = await authRepo.isLoggedIn();
+
+    if (!mounted) return;
+
+    final targetRoute = isLoggedIn ? AppRouter.home : AppRouter.auth;
+    Navigator.of(context).pushReplacementNamed(targetRoute);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.primary,
-      body: Center(
+      body: const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.piano,
-              size: 80,
-              color: Colors.white,
-            ),
-            const SizedBox(height: 16),
-            const Text(
+            Icon(Icons.piano, size: 80, color: Colors.white),
+            SizedBox(height: 16),
+            Text(
               'DeepMusic',
               style: TextStyle(
                 fontSize: 32,
@@ -100,12 +139,18 @@ class SplashPage extends StatelessWidget {
                 color: Colors.white,
               ),
             ),
-            const SizedBox(height: 8),
-            const Text(
+            SizedBox(height: 8),
+            Text(
               'Your Music AI Assistant',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
+              style: TextStyle(fontSize: 16, color: Colors.white70),
+            ),
+            SizedBox(height: 48),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white54,
               ),
             ),
           ],
@@ -122,9 +167,7 @@ class NotFoundPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Not Found')),
-      body: const Center(
-        child: Text('Page not found'),
-      ),
+      body: const Center(child: Text('Page not found')),
     );
   }
 }

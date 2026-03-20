@@ -92,29 +92,59 @@ deepmusic/
 ## 开发进度
 
 ### ✅ 已完成
+
+**设计文档**
 - [x] 产品需求文档 (PRD)
 - [x] 技术架构设计
 - [x] 开发路线图
-- [x] Flutter 项目结构 + 核心模块框架
-- [x] Express 后端 API (Auth/Score CRUD)
-- [x] Prisma 数据模型 (Score/User/PracticeRecord/Tag/Device)
-- [x] 30 首无版权乐谱数据导入
-- [x] 乐谱上传 (MusicXML) + Multer 文件处理
-- [x] Dart 数据模型 (Score/Note/Measure/Part)
-- [x] ScoreFollower / NoteEvaluator / MidiService 初稿
+- [x] 环境配置文档
+
+**后端 API** (26 个端点，全部测试通过)
+- [x] Auth: register / login / logout / me(GET) / me(PATCH)
+- [x] Scores: list / recommended / search / detail / upload / update / publish / delete / xml / favorite / unfavorite
+- [x] Practice: start / note / end / create / list / stats / detail / delete
+- [x] Devices: list / register / update / delete / connect
+- [x] User: profile(GET) / profile(PUT) / favorites / statistics
+- [x] Health check
+- [x] JWT 认证 + Token 黑名单 (登出失效)
+- [x] 文件上传 (Multer) + MusicXML 文件下载
+- [x] 收藏/取消收藏 (User-Score 多对多)
+- [x] 练习会话管理 (start → note → end 流程)
+- [x] Prisma 数据模型 (Score/User/PracticeRecord/Tag/Device) + 迁移
+- [x] 19 首乐谱种子数据导入
+
+**移动端核心模块**
+- [x] Flutter 项目结构 + feature-based 组织
+- [x] Riverpod 状态管理 + 路由配置
+- [x] Dart 数据模型 (Score/Part/Measure/Note/TimeSignature/KeySignature)
+- [x] MusicXML 解析器 (score-partwise 格式，含 divisions/和弦/休止符)
+- [x] OSMD 乐谱渲染器 (WebView + JS Bridge 双向通信)
+- [x] ScoreFollower 乐谱跟随引擎 (容错/翻页/进度流)
+- [x] NoteEvaluator 音符评估器 (音准+节奏双维度评分)
+- [x] MidiService MIDI 服务框架 (Stream 广播)
+- [x] API Client (Dio + Token 管理)
+- [x] Score Repository (列表/搜索/详情/下载/收藏)
+- [x] Practice Repository (start→note→end 完整流程封装)
+
+**前端页面**
+- [x] HomePage (设备连接卡片/快速开始/底部导航)
+- [x] ScoreLibraryPage (乐谱库浏览)
+- [x] ScoreViewPage (乐谱详情)
+- [x] PracticePage (练习界面/实时统计/控制面板/报告)
+- [x] DeviceListPage (MIDI 设备扫描连接)
+- [x] ProfilePage (个人页面)
 
 ### ⏳ 进行中
-- [ ] MusicXML 解析器实现
-- [ ] OSMD 乐谱渲染集成
-- [ ] 蓝牙 MIDI 底层实现
+- [ ] 蓝牙 MIDI 底层实现 (flutter_midi_command 真机调试)
+- [ ] ScoreFollower 和弦支持
+- [ ] 音乐 XML WebView 渲染集成到 ScoreViewPage
 
 ### 📋 待开发
-- [ ] 后端练习 API (practice routes)
-- [ ] ScoreFollower 容错 + 和弦支持
-- [ ] 用户注册/登录 UI
-- [ ] 练习历史 & 统计
+- [ ] 用户注册/登录 UI 页面
+- [ ] 练习历史 & 统计页面
+- [ ] 离线乐谱缓存
 - [ ] 端到端测试
-- [ ] App 发布
+- [ ] App 发布 (Google Play / App Store)
 
 ---
 
