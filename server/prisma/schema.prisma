@@ -19,20 +19,20 @@ model Score {
   difficulty  String @default("BEGINNER")
   
   // 文件信息
-  musicXmlPath String  // MusicXML 文件路径
-  coverImage   String? // 封面图片路径
-  fileSize     Int     // 文件大小 (bytes)
+  musicXmlPath String
+  coverImage   String?
+  fileSize     Int
   
   // 元数据
-  duration     Int     // 预估时长 (秒)
-  measures     Int     // 小节数
+  duration     Int
+  measures     Int
   timeSignature String @default("4/4")
   keySignature  String @default("C Major")
-  tempo        Int     @default(120) // BPM
+  tempo        Int     @default(120)
   
   // 分类
-  category    String?  // 古典、流行、爵士等
-  tags        Tag[]    // 标签
+  category    String?
+  tags        Tag[]
   
   // 统计
   playCount   Int      @default(0)
@@ -43,9 +43,9 @@ model Score {
   isPublic    Boolean     @default(true)
   
   // 版权信息
-  source      String?  // 来源 (IMSLP, Mutopia 等)
-  license     String?  // 许可证
-  copyright   String?  // 版权声明
+  source      String?
+  license     String?
+  copyright   String?
   
   // 时间戳
   createdAt   DateTime @default(now())
@@ -53,8 +53,9 @@ model Score {
   publishedAt DateTime?
   
   // 关系
-  practiceRecords PracticeRecord[]
-  favorites       User[]            @relation("UserFavorites")
+  practiceRecords  PracticeRecord[]
+  practiceSessions PracticeSession[]
+  favorites        User[]            @relation("UserFavorites")
 
   @@index([title])
   @@index([composer])
@@ -80,12 +81,13 @@ model User {
   avatar        String?
   
   // 统计
-  totalPracticeTime Int   @default(0) // 总练习时长 (秒)
-  totalSessions     Int   @default(0) // 总练习次数
-  totalNotes        Int   @default(0) // 总弹奏音符数
+  totalPracticeTime Int   @default(0)
+  totalSessions     Int   @default(0)
+  totalNotes        Int   @default(0)
   
   // 关系
   practiceRecords  PracticeRecord[]
+  practiceSessions PracticeSession[]
   favorites        Score[]          @relation("UserFavorites")
   
   createdAt    DateTime @default(now())
@@ -98,30 +100,46 @@ model PracticeRecord {
   userId    String
   scoreId   String
   
-  // 练习数据
-  duration      Int     // 练习时长 (秒)
-  notesPlayed   Int     // 弹奏音符数
+  duration      Int
+  notesPlayed   Int
+  pitchScore    Float
+  rhythmScore   Float
+  overallScore  Float
+  grade         String
+  details       String?
   
-  // 评分
-  pitchScore    Float   // 音准分数 (0-100)
-  rhythmScore   Float   // 节奏分数 (0-100)
-  overallScore  Float   // 综合分数 (0-100)
-  grade         String  // 等级 (S, A, B, C, D, F)
-  
-  // 详细数据 (TEXT)
-  details       String? // 详细评估数据 (JSON字符串)
-  
-  // 时间戳
   startedAt     DateTime
   completedAt   DateTime @default(now())
   
-  // 关系
   user          User    @relation(fields: [userId], references: [id])
   score         Score   @relation(fields: [scoreId], references: [id])
 
   @@index([userId])
   @@index([scoreId])
   @@index([completedAt])
+}
+
+// 活跃练习会话 (持久化，替代内存 Map)
+model PracticeSession {
+  id        String   @id @default(uuid())
+  userId    String
+  scoreId   String
+  startedAt DateTime
+  
+  // 状态: ACTIVE, COMPLETED, ABANDONED
+  status    String   @default("ACTIVE")
+  
+  // 累计音符事件 (JSON 数组，定期追加)
+  noteEvents String  @default("[]")
+  
+  updatedAt DateTime @updatedAt
+  
+  user      User     @relation(fields: [userId], references: [id])
+  score     Score    @relation(fields: [scoreId], references: [id])
+
+  @@index([userId])
+  @@index([scoreId])
+  @@index([status])
 }
 
 // 设备
@@ -134,7 +152,3 @@ model Device {
   lastConnected DateTime?
   createdAt     DateTime @default(now())
 }
-
-// Enum values are stored as strings
-// Difficulty: BEGINNER, INTERMEDIATE, ADVANCED
-// ScoreStatus: DRAFT, PUBLISHED, ARCHIVED

@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/midi_provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../services/midi_service.dart';
 
 class DeviceListPage extends ConsumerStatefulWidget {
   const DeviceListPage({super.key});
@@ -11,204 +12,251 @@ class DeviceListPage extends ConsumerStatefulWidget {
 }
 
 class _DeviceListPageState extends ConsumerState<DeviceListPage> {
+  final MidiService _midiService = MidiService();
+  List<MidiDevice> _devices = [];
+  bool _isScanning = false;
+  StreamSubscription? _devicesSub;
+  StreamSubscription? _stateSub;
+  MidiConnectionState _connectionState = MidiConnectionState.disconnected;
+
   @override
   void initState() {
     super.initState();
-    // 初始化时扫描设备
-    Future.microtask(() {
-      ref.refresh(deviceListProvider);
+    _listenToDevices();
+    _startScan();
+  }
+
+  void _listenToDevices() {
+    _devicesSub = _midiService.devices.listen((devices) {
+      if (mounted) setState(() => _devices = devices);
     });
+
+    _stateSub = _midiService.connectionState.listen((state) {
+      if (mounted) setState(() => _connectionState = state);
+    });
+  }
+
+  Future<void> _startScan() async {
+    setState(() => _isScanning = true);
+    final devices = await _midiService.scanAllDevices();
+    if (mounted) {
+      setState(() {
+        _devices = devices;
+        _isScanning = false;
+      });
+    }
+  }
+
+  Future<void> _connectToDevice(MidiDevice device) async {
+    final success = await _midiService.connect(device);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success ? '已连接 ${device.name}' : '连接失败'),
+          backgroundColor: success ? AppColors.success : AppColors.error,
+        ),
+      );
+      if (success) Navigator.pop(context);
+    }
+  }
+
+  @override
+  void dispose() {
+    _devicesSub?.cancel();
+    _stateSub?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final devicesAsync = ref.watch(deviceListProvider);
-    final connectionState = ref.watch(midiConnectionStateProvider);
-    final connectedDevice = ref.watch(connectedDeviceProvider);
+    final usbDevices = _devices
+        .where((d) => d.connectionType == MidiConnectionType.usb)
+        .toList();
+    final bleDevices = _devices
+        .where((d) => d.connectionType == MidiConnectionType.bluetooth)
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('MIDI 设备'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.refresh(deviceListProvider),
+            icon: _isScanning
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: _isScanning ? null : _startScan,
           ),
         ],
       ),
       body: Column(
         children: [
-          // 连接状态卡片
-          _buildConnectionStatus(connectionState, connectedDevice),
-          
-          // 设备列表
+          // 连接状态
+          _buildConnectionStatus(),
           Expanded(
-            child: devicesAsync.when(
-              data: (devices) => _buildDeviceList(devices, connectedDevice),
-              loading: () => const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text('正在扫描设备...'),
-                  ],
-                ),
-              ),
-              error: (error, stack) => Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, size: 48, color: AppColors.error),
-                    const SizedBox(height: 16),
-                    Text('扫描失败: $error'),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => ref.refresh(deviceListProvider),
-                      child: const Text('重试'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: _devices.isEmpty && !_isScanning
+                ? _buildEmptyState()
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      if (usbDevices.isNotEmpty) ...[
+                        _buildSectionHeader('USB 连接', Icons.usb),
+                        ...usbDevices.map(_buildDeviceTile),
+                        const SizedBox(height: 16),
+                      ],
+                      if (bleDevices.isNotEmpty) ...[
+                        _buildSectionHeader('蓝牙连接', Icons.bluetooth),
+                        ...bleDevices.map(_buildDeviceTile),
+                      ],
+                      if (_isScanning && _devices.isEmpty)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildConnectionStatus(
-    MidiConnectionState state, 
-    MidiDevice? device,
-  ) {
-    Color statusColor;
-    String statusText;
-    IconData statusIcon;
+  Widget _buildConnectionStatus() {
+    Color color;
+    String text;
+    IconData icon;
 
-    switch (state) {
+    switch (_connectionState) {
       case MidiConnectionState.connected:
-        statusColor = AppColors.success;
-        statusText = '已连接: ${device?.name ?? "未知设备"}';
-        statusIcon = Icons.bluetooth_connected;
+        color = AppColors.success;
+        final device = _midiService.connectedDevice;
+        final typeLabel =
+            device?.connectionType == MidiConnectionType.usb ? 'USB' : 'BLE';
+        text = '已连接 ($typeLabel): ${device?.name ?? "未知"}';
+        icon = Icons.check_circle;
         break;
       case MidiConnectionState.connecting:
-        statusColor = AppColors.warning;
-        statusText = '正在连接...';
-        statusIcon = Icons.bluetooth_searching;
+        color = AppColors.warning;
+        text = '连接中...';
+        icon = Icons.hourglass_empty;
         break;
       case MidiConnectionState.error:
-        statusColor = AppColors.error;
-        statusText = '连接失败';
-        statusIcon = Icons.bluetooth_disabled;
+        color = AppColors.error;
+        text = '连接错误';
+        icon = Icons.error;
         break;
-      case MidiConnectionState.disconnected:
       default:
-        statusColor = AppColors.textSecondary;
-        statusText = '未连接';
-        statusIcon = Icons.bluetooth;
+        color = Colors.grey;
+        text = '未连接';
+        icon = Icons.circle_outlined;
     }
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
-      ),
+      padding: const EdgeInsets.all(12),
+      color: color.withOpacity(0.08),
       child: Row(
         children: [
-          Icon(statusIcon, color: statusColor),
-          const SizedBox(width: 12),
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              statusText,
-              style: TextStyle(
-                color: statusColor,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          if (state == MidiConnectionState.connected)
+              child: Text(text, style: TextStyle(color: color, fontSize: 13))),
+          if (_connectionState == MidiConnectionState.connected)
             TextButton(
-              onPressed: () => ref.read(midiNotifierProvider.notifier).disconnect(),
-              child: const Text('断开连接'),
+              onPressed: _midiService.disconnect,
+              child: const Text('断开'),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildDeviceList(List<MidiDevice> devices, MidiDevice? connectedDevice) {
-    if (devices.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.bluetooth_disabled, size: 64, color: AppColors.textHint),
-            SizedBox(height: 16),
-            Text(
-              '未发现 MIDI 设备',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '请确保设备已开启蓝牙',
-              style: TextStyle(color: AppColors.textHint, fontSize: 12),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: devices.length,
-      itemBuilder: (context, index) {
-        final device = devices[index];
-        final isConnected = connectedDevice?.id == device.id;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            leading: Icon(
-              Icons.piano,
-              color: isConnected ? AppColors.primary : null,
-            ),
-            title: Text(device.name),
-            subtitle: Text(device.manufacturer ?? '未知厂商'),
-            trailing: isConnected
-                ? const Icon(Icons.check_circle, color: AppColors.success)
-                : const Icon(Icons.chevron_right),
-            onTap: isConnected
-                ? null
-                : () => _connectDevice(device),
-          ),
-        );
-      },
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary)),
+        ],
+      ),
     );
   }
 
-  Future<void> _connectDevice(MidiDevice device) async {
-    final success = await ref.read(midiNotifierProvider.notifier).connect(device);
-    
-    if (mounted) {
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('已连接到 ${device.name}'),
-            backgroundColor: AppColors.success,
+  Widget _buildDeviceTile(MidiDevice device) {
+    final isConnected = _midiService.connectedDevice?.id == device.id;
+    final isUsb = device.connectionType == MidiConnectionType.usb;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isConnected
+              ? AppColors.success.withOpacity(0.1)
+              : Colors.grey.withOpacity(0.1),
+          child: Icon(
+            isUsb ? Icons.usb : Icons.bluetooth,
+            color: isConnected ? AppColors.success : Colors.grey,
           ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('连接失败，请重试'),
-            backgroundColor: AppColors.error,
+        ),
+        title: Text(device.name),
+        subtitle: Text(
+          [
+            if (device.manufacturer != null) device.manufacturer!,
+            isUsb ? 'USB OTG' : '蓝牙 BLE',
+            if (isConnected) '· 已连接',
+          ].join(' · '),
+          style: const TextStyle(fontSize: 12),
+        ),
+        trailing: isConnected
+            ? const Icon(Icons.check_circle, color: AppColors.success)
+            : ElevatedButton(
+                onPressed: () => _connectToDevice(device),
+                style: ElevatedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
+                child: const Text('连接'),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.piano, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text(
+            '未发现 MIDI 设备',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
           ),
-        );
-      }
-    }
+          const SizedBox(height: 8),
+          const Text(
+            '请确保数字钢琴已开启\n蓝牙模式或 USB OTG 已连接',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _startScan,
+            icon: const Icon(Icons.refresh),
+            label: const Text('重新扫描'),
+          ),
+        ],
+      ),
+    );
   }
 }

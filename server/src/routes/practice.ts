@@ -13,26 +13,7 @@ const prisma = new PrismaClient();
 router.use(authMiddleware);
 
 // ============================================================
-// 内存中的活跃练习会话 (生产环境应使用 Redis)
-// sessionId → { userId, scoreId, startedAt, noteEvents }
-// ============================================================
-interface ActiveSession {
-  userId: string;
-  scoreId: string;
-  startedAt: Date;
-  noteEvents: Array<{
-    noteNumber: number;
-    velocity: number;
-    type: 'noteOn' | 'noteOff';
-    timestamp: string;
-  }>;
-}
-
-const activeSessions = new Map<string, ActiveSession>();
-
-// ============================================================
 // POST /api/practice/start - 开始练习会话
-// PRD: POST /api/practice/start, body: {scoreId}, response: {sessionId}
 // ============================================================
 router.post(
   '/start',
@@ -50,24 +31,38 @@ router.post(
         throw new AppError('乐谱不存在或未发布', 404);
       }
 
-      // 生成会话 ID
-      const sessionId = crypto.randomUUID();
+      // 检查是否有活跃会话
+      const existingSession = await prisma.practiceSession.findFirst({
+        where: { userId: req.userId, status: 'ACTIVE' },
+      });
+      if (existingSession) {
+        // 自动放弃旧会话
+        await prisma.practiceSession.update({
+          where: { id: existingSession.id },
+          data: { status: 'ABANDONED', updatedAt: new Date() },
+        });
+        logger.info(`Auto-abandoned stale session: ${existingSession.id}`);
+      }
 
-      activeSessions.set(sessionId, {
-        userId: req.userId,
-        scoreId,
-        startedAt: new Date(),
-        noteEvents: [],
+      // 创建持久化会话
+      const session = await prisma.practiceSession.create({
+        data: {
+          userId: req.userId,
+          scoreId,
+          startedAt: new Date(),
+          status: 'ACTIVE',
+          noteEvents: '[]',
+        },
       });
 
       logger.info(
-        `Practice session started: ${sessionId} (user=${req.userId}, score=${scoreId})`
+        `Practice session started: ${session.id} (user=${req.userId}, score=${scoreId})`
       );
 
       res.status(201).json({
         success: true,
         data: {
-          sessionId,
+          sessionId: session.id,
           scoreId,
           score: {
             id: score.id,
@@ -79,7 +74,7 @@ router.post(
             keySignature: score.keySignature,
             measures: score.measures,
           },
-          startedAt: new Date().toISOString(),
+          startedAt: session.startedAt.toISOString(),
         },
       });
     } catch (error) {
@@ -90,7 +85,6 @@ router.post(
 
 // ============================================================
 // POST /api/practice/:id/note - 上传音符事件
-// PRD: POST /api/practice/:id/note, body: {notes: NoteEvent[]}
 // ============================================================
 router.post(
   '/:id/note',
@@ -104,9 +98,13 @@ router.post(
   async (req: any, res, next) => {
     try {
       const sessionId = req.params.id;
-      const session = activeSessions.get(sessionId);
 
-      if (!session) {
+      // 从数据库读取会话
+      const session = await prisma.practiceSession.findUnique({
+        where: { id: sessionId },
+      });
+
+      if (!session || session.status !== 'ACTIVE') {
         throw new AppError('练习会话不存在或已结束', 404);
       }
 
@@ -116,14 +114,28 @@ router.post(
 
       const { notes } = req.body;
 
-      // 追加音符事件到会话
-      session.noteEvents.push(...notes);
+      // 追加音符事件 (读取 → 合并 → 写回)
+      const existing = JSON.parse(session.noteEvents || '[]');
+      const merged = [...existing, ...notes];
+
+      // 截断: 最多保留 5000 条事件防止膨胀
+      const trimmed = merged.length > 5000
+        ? merged.slice(merged.length - 5000)
+        : merged;
+
+      await prisma.practiceSession.update({
+        where: { id: sessionId },
+        data: {
+          noteEvents: JSON.stringify(trimmed),
+          updatedAt: new Date(),
+        },
+      });
 
       res.json({
         success: true,
         data: {
           accepted: notes.length,
-          totalEvents: session.noteEvents.length,
+          totalEvents: trimmed.length,
         },
       });
     } catch (error) {
@@ -134,7 +146,6 @@ router.post(
 
 // ============================================================
 // POST /api/practice/:id/end - 结束练习并提交报告
-// PRD: POST /api/practice/:id/end, body: {report: PracticeReport}
 // ============================================================
 router.post(
   '/:id/end',
@@ -150,9 +161,12 @@ router.post(
   async (req: any, res, next) => {
     try {
       const sessionId = req.params.id;
-      const session = activeSessions.get(sessionId);
 
-      if (!session) {
+      const session = await prisma.practiceSession.findUnique({
+        where: { id: sessionId },
+      });
+
+      if (!session || session.status !== 'ACTIVE') {
         throw new AppError('练习会话不存在或已结束', 404);
       }
 
@@ -170,53 +184,63 @@ router.post(
         details,
       } = req.body;
 
-      // 创建练习记录
-      const record = await prisma.practiceRecord.create({
-        data: {
-          user: { connect: { id: req.userId } },
-          score: { connect: { id: session.scoreId } },
-          duration,
-          notesPlayed,
-          pitchScore,
-          rhythmScore,
-          overallScore,
-          grade,
-          details: details
-            ? details
-            : JSON.stringify({
-                noteEventsCount: session.noteEvents.length,
-                noteEvents: session.noteEvents.slice(0, 1000), // 最多保存 1000 条
-              }),
-          startedAt: session.startedAt,
-        },
-      });
+      // 事务: 创建记录 + 更新统计 + 标记会话完成
+      const result = await prisma.$transaction(async (tx) => {
+        // 创建练习记录
+        const record = await tx.practiceRecord.create({
+          data: {
+            user: { connect: { id: req.userId } },
+            score: { connect: { id: session.scoreId } },
+            duration,
+            notesPlayed,
+            pitchScore,
+            rhythmScore,
+            overallScore,
+            grade,
+            details: details
+              ? details
+              : JSON.stringify({
+                  noteEventsCount: JSON.parse(session.noteEvents || '[]').length,
+                }),
+            startedAt: session.startedAt,
+          },
+        });
 
-      // 更新乐谱播放统计
-      await prisma.score.update({
-        where: { id: session.scoreId },
-        data: { playCount: { increment: 1 } },
-      });
+        // 更新乐谱播放统计
+        await tx.score.update({
+          where: { id: session.scoreId },
+          data: { playCount: { increment: 1 } },
+        });
 
-      // 更新用户统计
-      await prisma.user.update({
-        where: { id: req.userId },
-        data: {
-          totalPracticeTime: { increment: duration },
-          totalSessions: { increment: 1 },
-          totalNotes: { increment: notesPlayed },
-        },
-      });
+        // 更新用户统计
+        await tx.user.update({
+          where: { id: req.userId },
+          data: {
+            totalPracticeTime: { increment: duration },
+            totalSessions: { increment: 1 },
+            totalNotes: { increment: notesPlayed },
+          },
+        });
 
-      // 清理会话
-      activeSessions.delete(sessionId);
+        // 标记会话完成
+        await tx.practiceSession.update({
+          where: { id: sessionId },
+          data: {
+            status: 'COMPLETED',
+            updatedAt: new Date(),
+          },
+        });
+
+        return record;
+      });
 
       logger.info(
-        `Practice session ended: ${sessionId} → record ${record.id} (grade=${grade}, score=${overallScore})`
+        `Practice session ended: ${sessionId} → record ${result.id} (grade=${grade}, score=${overallScore})`
       );
 
       res.json({
         success: true,
-        data: record,
+        data: result,
       });
     } catch (error) {
       next(error);
@@ -225,7 +249,7 @@ router.post(
 );
 
 // ============================================================
-// POST /api/practice - 直接创建练习记录 (一次性提交，非会话模式)
+// POST /api/practice - 直接创建练习记录 (一次性提交)
 // ============================================================
 router.post(
   '/',
@@ -258,41 +282,41 @@ router.post(
         throw new AppError('乐谱不存在', 404);
       }
 
-      const record = await prisma.practiceRecord.create({
-        data: {
-          user: { connect: { id: req.userId } },
-          score: { connect: { id: scoreId } },
-          duration,
-          notesPlayed,
-          pitchScore,
-          rhythmScore,
-          overallScore,
-          grade,
-          details: details || null,
-          startedAt: new Date(startedAt),
-        },
+      const result = await prisma.$transaction(async (tx) => {
+        const record = await tx.practiceRecord.create({
+          data: {
+            user: { connect: { id: req.userId } },
+            score: { connect: { id: scoreId } },
+            duration,
+            notesPlayed,
+            pitchScore,
+            rhythmScore,
+            overallScore,
+            grade,
+            details: details || null,
+            startedAt: new Date(startedAt),
+          },
+        });
+
+        await tx.score.update({
+          where: { id: scoreId },
+          data: { playCount: { increment: 1 } },
+        });
+
+        await tx.user.update({
+          where: { id: req.userId },
+          data: {
+            totalPracticeTime: { increment: duration },
+            totalSessions: { increment: 1 },
+            totalNotes: { increment: notesPlayed },
+          },
+        });
+
+        return record;
       });
 
-      await prisma.score.update({
-        where: { id: scoreId },
-        data: { playCount: { increment: 1 } },
-      });
-
-      await prisma.user.update({
-        where: { id: req.userId },
-        data: {
-          totalPracticeTime: { increment: duration },
-          totalSessions: { increment: 1 },
-          totalNotes: { increment: notesPlayed },
-        },
-      });
-
-      logger.info(`Practice record created: ${record.id} by user ${req.userId}`);
-
-      res.status(201).json({
-        success: true,
-        data: record,
-      });
+      logger.info(`Practice record created: ${result.id} by user ${req.userId}`);
+      res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
@@ -300,7 +324,7 @@ router.post(
 );
 
 // ============================================================
-// GET /api/practice - 获取练习历史
+// GET /api/practice - 练习历史
 // ============================================================
 router.get(
   '/',
@@ -355,7 +379,7 @@ router.get(
 );
 
 // ============================================================
-// GET /api/practice/stats - 获取统计数据
+// GET /api/practice/stats - 统计数据
 // ============================================================
 router.get('/stats', async (req: any, res, next) => {
   try {
@@ -462,7 +486,7 @@ router.get('/stats', async (req: any, res, next) => {
 });
 
 // ============================================================
-// GET /api/practice/:id - 获取单条练习记录详情
+// GET /api/practice/:id - 单条记录详情
 // ============================================================
 router.get(
   '/:id',
@@ -519,17 +543,19 @@ router.delete(
         throw new AppError('练习记录不存在', 404);
       }
 
-      await prisma.practiceRecord.delete({
-        where: { id: req.params.id },
-      });
+      await prisma.$transaction(async (tx) => {
+        await tx.practiceRecord.delete({
+          where: { id: req.params.id },
+        });
 
-      await prisma.user.update({
-        where: { id: req.userId },
-        data: {
-          totalPracticeTime: { decrement: record.duration },
-          totalSessions: { decrement: 1 },
-          totalNotes: { decrement: record.notesPlayed },
-        },
+        await tx.user.update({
+          where: { id: req.userId },
+          data: {
+            totalPracticeTime: { decrement: record.duration },
+            totalSessions: { decrement: 1 },
+            totalNotes: { decrement: record.notesPlayed },
+          },
+        });
       });
 
       logger.info(`Practice record deleted: ${req.params.id}`);

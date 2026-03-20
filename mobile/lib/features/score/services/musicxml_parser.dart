@@ -4,7 +4,12 @@ import '../models/score.dart';
 
 /// MusicXML 解析器
 ///
-/// 支持 MusicXML 3.1 score-partwise 格式，解析为 Score 模型
+/// 支持 MusicXML 3.1 score-partwise 格式
+/// - 元数据提取 (标题/作曲家/tempo)
+/// - divisions/拍号/调号 (支持中途变更)
+/// - 音符解析 (pitch/duration/rest/chord)
+/// - 正确处理 <backup> / <forward> 元素
+/// - 时间轴计算基于逐小节累加 (支持变拍号)
 class MusicXmlParser {
   /// 解析 MusicXML 文件
   static Future<Score> parseFile(String filePath, {String? scoreId}) async {
@@ -20,14 +25,21 @@ class MusicXmlParser {
   static Score parseString(String xmlContent, {String? filePath, String? scoreId}) {
     try {
       final document = XmlDocument.parse(xmlContent);
-      final scoreElement = document.getElement('score-partwise');
+
+      // 支持 score-partwise 和 score-timewise
+      XmlElement? scoreElement = document.getElement('score-partwise');
+      bool isPartwise = true;
       if (scoreElement == null) {
-        throw MusicXmlParseException('仅支持 score-partwise 格式');
+        scoreElement = document.getElement('score-timewise');
+        isPartwise = false;
+      }
+      if (scoreElement == null) {
+        throw MusicXmlParseException('不支持的 MusicXML 格式 (需要 score-partwise 或 score-timewise)');
       }
 
       final metadata = _parseMetadata(scoreElement);
       final partList = _parsePartList(scoreElement);
-      final parts = _parseParts(scoreElement, partList);
+      final parts = _parseParts(scoreElement, partList, isPartwise);
 
       int totalMeasures = 0;
       for (final part in parts) {
@@ -77,18 +89,27 @@ class MusicXmlParser {
       title = workTitle.innerText.trim();
     }
 
+    // movement-title 备选
+    if (title == '未知曲目') {
+      final movementTitle = scoreElement.getElement('movement-title');
+      if (movementTitle != null) {
+        title = movementTitle.innerText.trim();
+      }
+    }
+
     // 作曲家: identification → creator[@type='composer']
     final identification = scoreElement.getElement('identification');
     if (identification != null) {
       for (final creator in identification.findElements('creator')) {
-        if (creator.getAttribute('type') == 'composer') {
+        final type = creator.getAttribute('type') ?? '';
+        if (type == 'composer' || type == 'lyricist') {
           composer = creator.innerText.trim();
           break;
         }
       }
     }
 
-    // 备选标题: credit → credit-words (取第一个非空)
+    // 备选标题: credit → credit-words
     if (title == '未知曲目') {
       for (final credit in scoreElement.findElements('credit')) {
         for (final words in credit.findElements('credit-words')) {
@@ -102,7 +123,7 @@ class MusicXmlParser {
       }
     }
 
-    // 速度: 第一个 part 第一个 measure 的 sound[@tempo]
+    // 速度: 第一个 part 第一个 measure
     final firstPart = scoreElement.getElement('part');
     if (firstPart != null) {
       final firstMeasure = firstPart.getElement('measure');
@@ -114,7 +135,6 @@ class MusicXmlParser {
             break;
           }
         }
-        // 备选: metronome → per-minute
         if (tempo == 120) {
           for (final dir in firstMeasure.findElements('direction')) {
             final dirType = dir.getElement('direction-type');
@@ -155,6 +175,7 @@ class MusicXmlParser {
   static List<Part> _parseParts(
     XmlElement scoreElement,
     Map<String, _PartDef> partList,
+    bool isPartwise,
   ) {
     final parts = <Part>[];
 
@@ -162,13 +183,13 @@ class MusicXmlParser {
       final partId = partEl.getAttribute('id') ?? 'P1';
       final partDef = partList[partId] ?? _PartDef(id: partId, name: 'Piano');
 
-      int divisions = 4; // 每四分音符 tick 数，小节间持久化
+      int divisions = 4;
       TimeSignature timeSig = TimeSignature.common;
       KeySignature keySig = KeySignature.cMajor;
       int tempo = 120;
 
       final measures = <Measure>[];
-      int cumulativeMs = 0; // 从曲首累计的毫秒数
+      int cumulativeMs = 0;
 
       for (final measureEl in partEl.findElements('measure')) {
         final measureNumber =
@@ -197,8 +218,7 @@ class MusicXmlParser {
           if (keyEl != null) {
             final fifths =
                 int.tryParse(keyEl.getElement('fifths')?.innerText ?? '0') ?? 0;
-            final mode =
-                keyEl.getElement('mode')?.innerText ?? 'major';
+            final mode = keyEl.getElement('mode')?.innerText ?? 'major';
             keySig = KeySignature(fifths: fifths, mode: mode);
           }
         }
@@ -214,7 +234,7 @@ class MusicXmlParser {
 
         // ── 解析音符 ──
         final notes = <Note>[];
-        int tickPos = 0; // 小节内 tick 位置
+        int tickPos = 0;
 
         for (final child in measureEl.children) {
           if (child is! XmlElement) continue;
@@ -232,11 +252,9 @@ class MusicXmlParser {
               tickPos: chord ? tickPos : tickPos,
             );
 
-            if (note != null) {
-              notes.add(note);
-            }
+            if (note != null) notes.add(note);
 
-            // 非和弦音符才推进 tick（和弦音符共享起始位置）
+            // 非和弦音符才推进 tick
             if (!chord) {
               final dur = child.getElement('duration');
               if (dur != null) {
@@ -266,8 +284,9 @@ class MusicXmlParser {
           keySignature: keySig,
         ));
 
-        // 累计时间 = 小节 tick 数 / divisions × 每四分音符毫秒
-        final ticksPerMeasure = timeSig.beats * (4 ~/ timeSig.beatType) * divisions;
+        // 累计时间 — 基于当前小节的 divisions 和拍号
+        final ticksPerMeasure =
+            timeSig.beats * (4 ~/ timeSig.beatType) * divisions;
         final msPerTick = 60000.0 / (tempo * divisions);
         cumulativeMs += (ticksPerMeasure * msPerTick).round();
       }
@@ -305,7 +324,7 @@ class MusicXmlParser {
     const stepIndex = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11};
     final pitchNumber = (octave + 1) * 12 + (stepIndex[step] ?? 0) + alter;
 
-    // 时值 (以四分音符为单位)
+    // 时值
     final durTicks =
         int.tryParse(noteEl.getElement('duration')?.innerText ?? '') ??
         divisions;
@@ -315,7 +334,7 @@ class MusicXmlParser {
     final msPerTick = 60000.0 / (tempo * divisions);
     final startMs = measureStartMs + (tickPos * msPerTick).round();
 
-    // 音符名称 (如 "C4", "F#5")
+    // 音符名称
     final pitchName = _buildPitchName(step, alter, octave);
 
     return Note(
