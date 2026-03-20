@@ -12,6 +12,7 @@ import scoreRoutes from './routes/scores.js';
 import authRoutes from './routes/auth.js';
 import practiceRoutes from './routes/practice.js';
 import deviceRoutes from './routes/devices.js';
+import userRoutes from './routes/user.js';
 
 dotenv.config();
 
@@ -53,6 +54,7 @@ app.use('/api/scores', scoreRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/practice', practiceRoutes);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/user', userRoutes);
 
 // Error handling
 app.use(notFoundHandler);

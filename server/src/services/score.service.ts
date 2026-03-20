@@ -21,8 +21,8 @@ export const getScores = async (options: {
     ...(category && { category }),
     ...(search && {
       OR: [
-        { title: { contains: search, mode: 'insensitive' as const } },
-        { composer: { contains: search, mode: 'insensitive' as const } },
+        { title: { contains: search } },
+        { composer: { contains: search } },
       ],
     }),
   };
@@ -92,7 +92,20 @@ export const createScore = async (data: {
 }) => {
   const score = await prisma.score.create({
     data: {
-      ...data,
+      title: data.title,
+      composer: data.composer,
+      arranger: data.arranger,
+      difficulty: data.difficulty || 'BEGINNER',
+      musicXmlPath: data.musicXmlPath,
+      fileSize: data.fileSize,
+      duration: data.duration ?? 0,
+      measures: data.measures ?? 0,
+      timeSignature: data.timeSignature,
+      keySignature: data.keySignature,
+      tempo: data.tempo,
+      category: data.category,
+      source: data.source,
+      license: data.license,
       status: 'DRAFT',
     },
   });
@@ -165,9 +178,9 @@ export const searchScores = async (query: string, limit: number = 20) => {
       status: 'PUBLISHED',
       isPublic: true,
       OR: [
-        { title: { contains: query, mode: 'insensitive' } },
-        { composer: { contains: query, mode: 'insensitive' } },
-        { category: { contains: query, mode: 'insensitive' } },
+        { title: { contains: query } },
+        { composer: { contains: query } },
+        { category: { contains: query } },
       ],
     },
     take: limit,

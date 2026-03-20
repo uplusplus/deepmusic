@@ -13,6 +13,9 @@ const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'deepmusic-dev-secret';
 const JWT_EXPIRES_IN = '7d';
 
+// Token 黑名单 (内存版，生产环境应使用 Redis)
+const tokenBlacklist = new Set<string>();
+
 interface JwtPayload {
   userId: string;
   email: string;
@@ -31,10 +34,17 @@ export function authMiddleware(req: any, res: any, next: any) {
   }
 
   const token = authHeader.substring(7);
+
+  // 检查黑名单
+  if (tokenBlacklist.has(token)) {
+    throw new AppError('Token 已失效', 401);
+  }
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
     req.userId = decoded.userId;
     req.userEmail = decoded.email;
+    req.token = token;
     next();
   } catch (error) {
     throw new AppError('Token 无效或已过期', 401);
@@ -138,6 +148,18 @@ router.post(
     }
   }
 );
+
+// POST /api/auth/logout - 登出
+router.post('/logout', authMiddleware, async (req: any, res, next) => {
+  try {
+    // 将 token 加入黑名单
+    tokenBlacklist.add(req.token);
+    logger.info(`User logged out: ${req.userEmail}`);
+    res.json({ success: true, message: '已登出' });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // GET /api/auth/me - 获取当前用户信息
 router.get('/me', authMiddleware, async (req: any, res, next) => {

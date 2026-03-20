@@ -2,11 +2,15 @@ import { Router } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate.js';
 import { AppError } from '../middleware/error.js';
+import { authMiddleware } from './auth.js';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// 所有 devices 路由都需要认证
+router.use(authMiddleware);
 
 // GET /api/devices - 获取当前用户的设备列表
 router.get('/', async (req: any, res, next) => {
