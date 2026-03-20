@@ -40,19 +40,19 @@
 
                     ┌──────────────┐
                     │ Yamaha P125  │
-                    │ (BLE MIDI)   │
-                    └──────┬───────┘
-                           │
-                    Bluetooth LE MIDI
-                           │
-              ┌────────────┼────────────┐
-              │            │            │
-       ┌──────▼───┐ ┌──────▼───┐       │
-       │   iOS    │ │ Android  │       │
-       │   App    │ │   App    │       │
-       └──────────┘ └──────────┘       │
-                                       │
-              浏览器访问后端 API ───────┘
+                    │ (BLE + USB)  │
+                    └──┬───────┬───┘
+                       │       │
+              BLE MIDI │       │ USB OTG MIDI
+                       │       │
+              ┌────────┼───┐   │
+              │        │   │   │
+       ┌──────▼───┐ ┌──▼───▼───┴───┐
+       │   iOS    │ │   Android    │
+       │  (BLE)   │ │ (BLE + USB)  │
+       └──────────┘ └──────────────┘
+                       │
+              浏览器访问后端 API ─┘
 ```
 
 ---
@@ -144,11 +144,14 @@ mobile/
 
 ### 2.2 核心模块设计
 
-#### 2.2.1 MIDI Service
+#### 2.2.1 MIDI Service (蓝牙 + USB)
 
-职责：管理 BLE MIDI 设备的扫描、连接和事件分发。
+职责：管理 MIDI 设备的扫描、连接和事件分发。支持**蓝牙 BLE** 和 **USB OTG** 两种连接方式。
 
 ```dart
+/// 连接方式
+enum MidiConnectionType { bluetooth, usb }
+
 class MidiService {
   // 单例模式
   static final MidiService _instance = MidiService._internal();
@@ -159,10 +162,21 @@ class MidiService {
   Stream<MidiEvent> get midiStream;
   Stream<List<MidiDevice>> get devices;
 
-  // 操作
-  Future<List<MidiDevice>> scanDevices();
-  Future<bool> connect(MidiDevice device);
-  Future<void> disconnect();
+  // 当前连接方式
+  MidiConnectionType? get connectionType;
+
+  // 蓝牙操作
+  Future<List<MidiDevice>> scanBleDevices();
+  Future<bool> connectBle(MidiDevice device);
+  Future<void> disconnectBle();
+
+  // USB 操作
+  Future<List<MidiDevice>> getUsbDevices();
+  Future<bool> connectUsb(MidiDevice device);
+  Future<void> disconnectUsb();
+
+  // 通用
+  Future<void> disconnect();  // 断开当前连接
 }
 ```
 
@@ -174,14 +188,28 @@ class MidiEvent {
   final int velocity;        // 力度 (0-127)
   final int channel;         // 通道 (0-15)
   final DateTime timestamp;
+  final MidiConnectionType source;  // bluetooth | usb
 }
 ```
 
-**实现要点**:
+**蓝牙 BLE MIDI 实现要点**:
 - 使用 `flutter_midi_command` 包封装
 - Android 需要 `BLUETOOTH_CONNECT` + `BLUETOOTH_SCAN` 权限
 - iOS 需要 `NSBluetoothAlwaysUsageDescription`
-- 断线重连：最多 3 次，间隔 2 秒，指数退避
+- 断线自动重连：最多 3 次，间隔 2 秒，指数退避
+- 延迟目标: < 50ms
+
+**USB MIDI 实现要点**:
+- 使用 `usb_serial` 或 `flutter_libserialport` 包
+- Android 需要 USB Host 权限 (`android.permission.USB_HOST`) + device_filter.xml
+- iOS 不支持 USB MIDI（系统限制）
+- 支持热插拔: 监听 USB 设备接入/拔出广播
+- 延迟目标: < 20ms（显著优于蓝牙）
+
+**连接策略**:
+- USB 连接优先于蓝牙（延迟更低、更稳定）
+- 当 USB 设备接入时，自动提示用户切换连接方式
+- 两种连接共享统一的 `Stream<MidiEvent>` 分发，上层无需关心来源
 - MIDI 事件通过 `StreamController.broadcast()` 分发，支持多个订阅者
 
 #### 2.2.2 Score Follower (乐谱跟随引擎)
@@ -358,8 +386,9 @@ dependencies:
   # 状态管理
   flutter_riverpod: ^2.4.0
 
-  # MIDI
+  # MIDI (蓝牙 + USB)
   flutter_midi_command: ^0.5.2
+  usb_serial: ^0.5.1
 
   # 网络
   dio: ^5.4.0
@@ -637,7 +666,8 @@ npm run scores:import  # 导入乐谱数据
 | Prisma Schema | ✅ | 5 个模型，关系完整 |
 | 乐谱种子数据 | ✅ | 30 首已导入 |
 | Practice 路由 | ⚠️ | 空壳，端点为 TODO |
-| MIDI Service | ⚠️ | Dart 框架 + 流式 API，底层蓝牙待实现 |
+| MIDI Service (蓝牙) | ⚠️ | Dart 框架 + 流式 API，底层蓝牙待真机调试 |
+| MIDI Service (USB) | ❌ | 需添加 USB OTG 支持 |
 | Score Follower | ⚠️ | 简单音符匹配，缺少容错/和弦支持 |
 | Note Evaluator | ✅ | 评分逻辑完整 |
 | MusicXML Parser | ❌ | 需实现 |

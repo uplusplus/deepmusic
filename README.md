@@ -10,7 +10,7 @@ DeepMusic 是 AI 驱动的音乐学习助手，Phase 1 聚焦**钢琴学习**。
 
 ### 核心功能
 
-- 🎹 **蓝牙 MIDI 连接** — 连接 Yamaha P125 等数字钢琴
+- 🎹 **MIDI 连接** — 支持蓝牙 BLE 和 USB OTG 两种方式连接数字钢琴
 - 📖 **智能乐谱跟随** — 实时跟踪弹奏位置，自动翻页
 - 🎯 **练习评估** — 音准 + 节奏多维评分（S/A/B/C/D/F）
 - 🎼 **曲谱库** — 30 首无版权曲谱，分类筛选
@@ -33,7 +33,7 @@ DeepMusic 是 AI 驱动的音乐学习助手，Phase 1 聚焦**钢琴学习**。
 | 移动端 | Flutter 3.x + Riverpod |
 | 后端 | Express + TypeScript + Prisma |
 | 数据库 | SQLite (dev) / PostgreSQL (prod) |
-| MIDI | flutter_midi_command (BLE MIDI) |
+| MIDI | flutter_midi_command (BLE) + usb_serial (USB OTG) |
 | 乐谱渲染 | OpenSheetMusicDisplay (WebView) |
 
 ---
@@ -141,6 +141,7 @@ deepmusic/
 
 ### ⏳ 进行中
 - [ ] 蓝牙 MIDI 底层实现 (flutter_midi_command 真机调试)
+- [ ] USB MIDI 支持 (usb_serial + OTG 热插拔)
 - [ ] ScoreFollower 和弦支持
 
 ### 📋 待开发
