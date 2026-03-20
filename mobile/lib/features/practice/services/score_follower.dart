@@ -39,6 +39,14 @@ class PracticeProgress {
   final double pitchAccuracy;
   final double rhythmAccuracy;
 
+  // 循环练习
+  final bool loopEnabled;
+  final int loopCycle;
+  final int? loopStartMeasure;
+  final int? loopEndMeasure;
+  final double? loopBestScore;
+  final List<double>? loopCycleScores;
+
   PracticeProgress({
     required this.currentNoteIndex,
     required this.totalNotes,
@@ -53,6 +61,12 @@ class PracticeProgress {
     this.missedNotes = 0,
     this.pitchAccuracy = 1.0,
     this.rhythmAccuracy = 1.0,
+    this.loopEnabled = false,
+    this.loopCycle = 0,
+    this.loopStartMeasure,
+    this.loopEndMeasure,
+    this.loopBestScore,
+    this.loopCycleScores,
   });
 }
 
@@ -97,6 +111,17 @@ class ScoreFollower {
   int _consecutiveErrors = 0;
   static const int _maxConsecutiveErrors = 5;
   int _lookAheadWindow = 3;
+
+  // 循环练习
+  int? _loopStartGroupIndex;
+  int? _loopEndGroupIndex;
+  bool _loopEnabled = false;
+  int _loopCycle = 0;
+  final List<double> _loopCycleScores = [];
+  // 循环内统计
+  int _loopCorrect = 0;
+  int _loopWrong = 0;
+  int _loopMissed = 0;
 
   // 和弦收集器
   DateTime? _chordCollectionStart;
@@ -183,6 +208,58 @@ class ScoreFollower {
     return groups;
   }
 
+  // ── 循环练习 ──
+
+  /// 设置循环区间
+  void setLoopRange(int startMeasure, int endMeasure) {
+    _loopStartGroupIndex = _findGroupIndexForMeasure(startMeasure);
+    _loopEndGroupIndex = _findGroupIndexForMeasure(endMeasure);
+    if (_loopStartGroupIndex == null || _loopEndGroupIndex == null) {
+      debugPrint('[ScoreFollower] Invalid loop range: $startMeasure-$endMeasure');
+      return;
+    }
+    _loopEnabled = true;
+    _loopCycle = 0;
+    _loopCycleScores.clear();
+    _resetLoopStats();
+    debugPrint('[ScoreFollower] Loop range set: measures $startMeasure-$endMeasure, '
+        'groups $_loopStartGroupIndex-$_loopEndGroupIndex');
+    _emitProgress();
+  }
+
+  /// 清除循环区间
+  void clearLoopRange() {
+    _loopEnabled = false;
+    _loopStartGroupIndex = null;
+    _loopEndGroupIndex = null;
+    _loopCycle = 0;
+    _loopCycleScores.clear();
+    _emitProgress();
+  }
+
+  /// 查找小节对应的第一个和弦组索引
+  int? _findGroupIndexForMeasure(int measureNumber) {
+    for (int i = 0; i < _chordGroups.length; i++) {
+      if (_chordGroups[i].notes.first.measureNumber >= measureNumber) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  void _resetLoopStats() {
+    _loopCorrect = 0;
+    _loopWrong = 0;
+    _loopMissed = 0;
+  }
+
+  /// 循环练习信息
+  bool get loopEnabled => _loopEnabled;
+  int get loopCycle => _loopCycle;
+  int? get loopStartMeasure => _loopEnabled ? _chordGroups[_loopStartGroupIndex!].notes.first.measureNumber : null;
+  int? get loopEndMeasure => _loopEnabled ? _chordGroups[_loopEndGroupIndex!].notes.first.measureNumber : null;
+  double? get loopBestScore => _loopCycleScores.isEmpty ? null : _loopCycleScores.reduce((a, b) => a > b ? a : b);
+
   /// 构建页面布局 (基于和弦组)
   List<PageLayout> _buildPageLayouts() {
     final layouts = <PageLayout>[];
@@ -267,6 +344,7 @@ class ScoreFollower {
 
     if (event.noteNumber == expectedPitch) {
       _correctNotes++;
+      if (_loopEnabled) _loopCorrect++;
       _consecutiveErrors = 0;
       _advanceToNextGroup();
     } else {
@@ -281,9 +359,11 @@ class ScoreFollower {
             for (int skip = 0; skip < offset; skip++) {
               final skipped = _chordGroups[_currentGroupIndex + skip];
               _missedNotes += skipped.notes.length;
+              if (_loopEnabled) _loopMissed += skipped.notes.length;
             }
             _currentGroupIndex = futureIdx;
             _correctNotes++;
+            if (_loopEnabled) _loopCorrect++;
             _consecutiveErrors = 0;
             _advanceToNextGroup();
             foundInWindow = true;
@@ -343,12 +423,17 @@ class ScoreFollower {
       // 和弦匹配通过
       _correctNotes += matched.length;
       _missedNotes += missed.length;
+      if (_loopEnabled) {
+        _loopCorrect += matched.length;
+        _loopMissed += missed.length;
+      }
       _consecutiveErrors = 0;
       _advanceToNextGroup();
     } else {
       // 和弦匹配失败
       _wrongNotes += group.notes.length;
       _extraNotes += extra.length;
+      if (_loopEnabled) _loopWrong += group.notes.length;
       _consecutiveErrors++;
 
       // 容错：向前搜索
@@ -389,9 +474,26 @@ class ScoreFollower {
     _collectedChordPitches.clear();
   }
 
-  /// 前进到下一个和弦组
+  /// 前进到下一个和弦组 (支持循环)
   void _advanceToNextGroup() {
     _currentGroupIndex++;
+
+    // 循环模式: 检查是否到达区间末尾
+    if (_loopEnabled &&
+        _loopEndGroupIndex != null &&
+        _currentGroupIndex > _loopEndGroupIndex!) {
+      // 计算本次循环得分
+      final totalInLoop = _loopCorrect + _loopWrong + _loopMissed;
+      final score = totalInLoop > 0 ? _loopCorrect / totalInLoop : 0.0;
+      _loopCycleScores.add(score);
+      _loopCycle++;
+      debugPrint('[ScoreFollower] Loop cycle $_loopCycle done, score: ${(score * 100).toInt()}%');
+
+      // 跳回区间起点
+      _currentGroupIndex = _loopStartGroupIndex!;
+      _resetLoopStats();
+    }
+
     _updateMeasureAndPage();
     _checkFinished();
     _emitProgress();
@@ -470,6 +572,12 @@ class ScoreFollower {
       missedNotes: _missedNotes,
       pitchAccuracy: processedNotes > 0 ? _correctNotes / processedNotes : 1.0,
       rhythmAccuracy: 1.0,
+      loopEnabled: _loopEnabled,
+      loopCycle: _loopCycle,
+      loopStartMeasure: loopStartMeasure,
+      loopEndMeasure: loopEndMeasure,
+      loopBestScore: loopBestScore,
+      loopCycleScores: _loopCycleScores.isEmpty ? null : List.unmodifiable(_loopCycleScores),
     );
     _progressController.add(progress);
   }
@@ -507,6 +615,12 @@ class ScoreFollower {
     _consecutiveErrors = 0;
     _chordCollectionStart = null;
     _collectedChordPitches.clear();
+    _loopEnabled = false;
+    _loopStartGroupIndex = null;
+    _loopEndGroupIndex = null;
+    _loopCycle = 0;
+    _loopCycleScores.clear();
+    _resetLoopStats();
     _practiceStartTime = DateTime.now();
     _emitProgress();
   }

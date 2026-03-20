@@ -16,6 +16,12 @@ class ScoreRenderer extends StatefulWidget {
   /// 缩放比例 (默认 1.0)
   final double zoom;
 
+  /// 循环区间起始小节 (1-based)
+  final int? loopStartMeasure;
+
+  /// 循环区间结束小节 (1-based)
+  final int? loopEndMeasure;
+
   /// 渲染完成回调
   final void Function(ScoreRenderInfo info)? onRendered;
 
@@ -65,6 +71,17 @@ class _ScoreRendererState extends State<ScoreRenderer> {
     // 缩放变化 → 更新缩放
     if (widget.zoom != oldWidget.zoom && _isRendered) {
       _setZoom(widget.zoom);
+    }
+
+    // 循环区间变化 → 更新高亮
+    if ((widget.loopStartMeasure != oldWidget.loopStartMeasure ||
+         widget.loopEndMeasure != oldWidget.loopEndMeasure) &&
+        _isRendered) {
+      if (widget.loopStartMeasure != null && widget.loopEndMeasure != null) {
+        _highlightLoopRange(widget.loopStartMeasure!, widget.loopEndMeasure!);
+      } else {
+        _clearLoopHighlight();
+      }
     }
   }
 
@@ -173,6 +190,14 @@ class _ScoreRendererState extends State<ScoreRenderer> {
 
   void _setZoom(double zoom) {
     _sendMessage({'action': 'zoom', 'zoom': zoom});
+  }
+
+  void _highlightLoopRange(int startMeasure, int endMeasure) {
+    _sendMessage({'action': 'highlightLoop', 'startMeasure': startMeasure, 'endMeasure': endMeasure});
+  }
+
+  void _clearLoopHighlight() {
+    _sendMessage({'action': 'clearLoop'});
   }
 
   @override

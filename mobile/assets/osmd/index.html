@@ -198,6 +198,42 @@
       }
     }
 
+
+    // ── 循环区间高亮 (黄色) ──
+    function highlightLoopRange(startMeasure, endMeasure) {
+      const svg = document.querySelector('#score-container svg');
+      if (!svg) return;
+
+      // 移除旧循环高亮
+      svg.querySelectorAll('.loop-highlight').forEach(el => el.remove());
+
+      for (let i = startMeasure; i <= endMeasure; i++) {
+        const idx = i - 1; // measurePositions 是 0-based
+        if (idx < 0 || idx >= measurePositions.length) continue;
+        const pos = measurePositions[idx];
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('class', 'loop-highlight');
+        rect.setAttribute('x', pos.x);
+        rect.setAttribute('y', pos.y - 10);
+        rect.setAttribute('width', pos.width);
+        rect.setAttribute('height', pos.height + 20);
+        rect.setAttribute('fill', 'rgba(255, 193, 7, 0.12)');
+        rect.setAttribute('stroke', 'rgba(255, 193, 7, 0.4)');
+        rect.setAttribute('stroke-width', '2');
+        rect.setAttribute('rx', '4');
+        rect.setAttribute('pointer-events', 'none');
+        svg.insertBefore(rect, svg.firstChild);
+      }
+    }
+
+    // ── 清除循环区间高亮 ──
+    function clearLoopHighlight() {
+      const svg = document.querySelector('#score-container svg');
+      if (!svg) return;
+      svg.querySelectorAll('.loop-highlight').forEach(el => el.remove());
+    }
+
     // ── 通信：接收 Flutter 消息 ──
     function handleMessage(message) {
       try {
@@ -218,6 +254,12 @@
             break;
           case 'zoom':
             setZoom(msg.zoom);
+            break;
+          case 'highlightLoop':
+            highlightLoopRange(msg.startMeasure, msg.endMeasure);
+            break;
+          case 'clearLoop':
+            clearLoopHighlight();
             break;
           case 'getPositions':
             sendToFlutter('positions', { data: measurePositions });

@@ -48,6 +48,13 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   int _highlightMeasure = 1;
   ScoreRenderInfo? _renderInfo;
 
+  // 循环练习
+  bool _loopEnabled = false;
+  int _loopStartMeasure = 1;
+  int _loopEndMeasure = 4;
+  int _loopCycle = 0;
+  double? _loopBestScore;
+
   @override
   void initState() {
     super.initState();
@@ -113,12 +120,19 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     });
 
     _follower = ScoreFollower(widget.score!);
+    if (_loopEnabled) {
+      _follower!.setLoopRange(_loopStartMeasure, _loopEndMeasure);
+    }
 
     _progressSub = _follower!.progressStream.listen((progress) {
       if (mounted) {
         setState(() {
           _progress = progress;
           _highlightMeasure = progress.currentMeasure;
+          if (progress.loopEnabled) {
+            _loopCycle = progress.loopCycle;
+            _loopBestScore = progress.loopBestScore;
+          }
           if (progress.completionPercentage >= 1.0) {
             _state = PracticeState.completed;
             _showReport();
@@ -375,6 +389,8 @@ class _PracticePageState extends ConsumerState<PracticePage> {
           ScoreRenderer(
             musicXml: _xmlContent!,
             highlightMeasure: _state == PracticeState.playing ? _highlightMeasure : null,
+            loopStartMeasure: _loopEnabled ? _loopStartMeasure : null,
+            loopEndMeasure: _loopEnabled ? _loopEndMeasure : null,
             onRendered: (info) {
               setState(() => _renderInfo = info);
             },
@@ -564,6 +580,9 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             ],
           ),
           const SizedBox(height: 12),
+          // 循环控制栏
+          _buildLoopControls(),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -634,6 +653,216 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
       Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
     ]);
+  }
+
+  Widget _buildLoopControls() {
+    if (_follower == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: _loopEnabled ? Colors.amber.withOpacity(0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: _loopEnabled ? Border.all(color: Colors.amber.withOpacity(0.3)) : null,
+      ),
+      child: Row(
+        children: [
+          // 循环开关
+          SizedBox(
+            height: 24,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.repeat, size: 16, color: _loopEnabled ? Colors.amber[700] : Colors.grey),
+                const SizedBox(width: 4),
+                Transform.scale(
+                  scale: 0.8,
+                  child: Switch(
+                    value: _loopEnabled,
+                    onChanged: (_state == PracticeState.playing || _state == PracticeState.paused)
+                        ? null // 练习中不能切换
+                        : (v) {
+                            setState(() {
+                              _loopEnabled = v;
+                              if (v && _follower != null) {
+                                _follower!.setLoopRange(_loopStartMeasure, _loopEndMeasure);
+                              } else if (_follower != null) {
+                                _follower!.clearLoopRange();
+                              }
+                            });
+                          },
+                    activeColor: Colors.amber[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          if (_loopEnabled) ...[
+            // 区间显示 + 编辑
+            GestureDetector(
+              onTap: (_state != PracticeState.playing && _state != PracticeState.paused)
+                  ? _showLoopRangePicker
+                  : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '[$_loopStartMeasure - $_loopEndMeasure]',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.amber[800],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // 循环次数
+            Text(
+              '第 ${_loopCycle + 1} 次',
+              style: TextStyle(fontSize: 12, color: Colors.amber[800]),
+            ),
+
+            // 最佳成绩
+            if (_loopBestScore != null) ...[
+              const SizedBox(width: 8),
+              Text(
+                '最佳 ${( _loopBestScore! * 100).toInt()}%',
+                style: TextStyle(fontSize: 11, color: Colors.amber[600]),
+              ),
+            ],
+          ] else
+            const Text(
+              '循环练习',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+
+          const Spacer(),
+
+          // 循环趋势按钮
+          if (_loopEnabled && _loopCycle > 0)
+            IconButton(
+              icon: const Icon(Icons.show_chart, size: 18),
+              onPressed: _showLoopTrend,
+              tooltip: '循环趋势',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showLoopRangePicker() {
+    final totalMeasures = widget.score?.totalMeasures ?? 32;
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        int tempStart = _loopStartMeasure;
+        int tempEnd = _loopEndMeasure;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('选择循环区间', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      const Text('起始小节: '),
+                      Expanded(
+                        child: Slider(
+                          value: tempStart.toDouble(),
+                          min: 1,
+                          max: totalMeasures.toDouble(),
+                          divisions: totalMeasures - 1,
+                          label: '$tempStart',
+                          onChanged: (v) => setModalState(() {
+                            tempStart = v.round();
+                            if (tempStart > tempEnd) tempEnd = tempStart;
+                          }),
+                        ),
+                      ),
+                      SizedBox(width: 40, child: Text('$tempStart', textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold))),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const Text('结束小节: '),
+                      Expanded(
+                        child: Slider(
+                          value: tempEnd.toDouble(),
+                          min: 1,
+                          max: totalMeasures.toDouble(),
+                          divisions: totalMeasures - 1,
+                          label: '$tempEnd',
+                          onChanged: (v) => setModalState(() {
+                            tempEnd = v.round();
+                            if (tempEnd < tempStart) tempStart = tempEnd;
+                          }),
+                        ),
+                      ),
+                      SizedBox(width: 40, child: Text('$tempEnd', textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold))),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _loopStartMeasure = tempStart;
+                          _loopEndMeasure = tempEnd;
+                          if (_follower != null) {
+                            _follower!.setLoopRange(tempStart, tempEnd);
+                          }
+                        });
+                        Navigator.pop(context);
+                      },
+                      child: Text('确认 ($tempStart - $tempEnd)'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showLoopTrend() {
+    final scores = _follower != null
+        ? (List.generate(_loopCycle, (i) => (i + 1).toString()))
+        : <String>[];
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('循环趋势'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('共 $_loopCycle 次循环'),
+            if (_loopBestScore != null)
+              Text('最佳成绩: ${(_loopBestScore! * 100).toInt()}%',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+        ],
+      ),
+    );
   }
 
   Widget _buildReportSheet(PracticeReport report) {

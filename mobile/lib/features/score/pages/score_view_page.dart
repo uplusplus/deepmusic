@@ -5,6 +5,7 @@ import '../../../core/router/app_router.dart';
 import '../../../data/providers/score_provider.dart';
 import '../../../data/repositories/score_repository.dart';
 import '../widgets/score_renderer.dart';
+import '../../practice/services/auto_player.dart';
 
 class ScoreViewPage extends ConsumerStatefulWidget {
   final String scoreId;
@@ -26,10 +27,19 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   String? _xmlError;
   int _highlightMeasure = 1;
 
+  // 自动播放
+  AutoPlayer? _autoPlayer;
+  AutoPlayState _playState = AutoPlayState.initial();
+  double _playbackRate = 1.0;
+
   @override
   void initState() {
     super.initState();
     _loadScoreXml();
+  }
+
+  void _initAutoPlayer() {
+    // AutoPlayer 需要 Score 对象，这里仅在播放时创建
   }
 
   Future<void> _loadScoreXml() async {
@@ -76,6 +86,32 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
     } finally {
       if (mounted) setState(() => _isFavoriteLoading = false);
     }
+  }
+
+  // ── 自动播放控制 ──
+
+  void _togglePlay() {
+    if (_autoPlayer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('需要乐谱数据才能播放')),
+      );
+      return;
+    }
+
+    if (_playState.isPlaying && !_playState.isPaused) {
+      _autoPlayer!.pause();
+    } else {
+      _autoPlayer!.play(fromMeasure: _highlightMeasure, rate: _playbackRate);
+    }
+  }
+
+  void _stopPlay() {
+    _autoPlayer?.stop();
+  }
+
+  void _changeRate(double rate) {
+    setState(() => _playbackRate = rate);
+    _autoPlayer?.setPlaybackRate(rate);
   }
 
   @override
@@ -191,28 +227,137 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
         ],
       ),
 
-      // 底部: 开始练习
+      // 底部: 试听 + 开始练习
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: ElevatedButton.icon(
-            onPressed: () => Navigator.of(context).pushNamed(
-              AppRouter.practice,
-              arguments: {'scoreId': score.id},
-            ),
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('开始练习'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(fontSize: 18),
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 播放控制栏
+              _buildPlaybackBar(score),
+              const SizedBox(height: 12),
+              // 开始练习按钮
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    _autoPlayer?.stop();
+                    Navigator.of(context).pushNamed(
+                      AppRouter.practice,
+                      arguments: {'scoreId': score.id},
+                    );
+                  },
+                  icon: const Icon(Icons.piano),
+                  label: const Text('开始练习'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(fontSize: 18),
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPlaybackBar(ScoreModel score) {
+    final isPlaying = _playState.isPlaying && !_playState.isPaused;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        children: [
+          // 进度条
+          if (_playState.isPlaying)
+            LinearProgressIndicator(
+              value: _playState.progress,
+              backgroundColor: Colors.grey[200],
+              valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+              minHeight: 3,
+            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              // 播放/暂停
+              IconButton(
+                icon: Icon(
+                  isPlaying ? Icons.pause_circle : Icons.play_circle,
+                  size: 36,
+                  color: AppColors.primary,
+                ),
+                onPressed: _togglePlay,
+              ),
+              // 停止
+              if (_playState.isPlaying)
+                IconButton(
+                  icon: const Icon(Icons.stop_circle, size: 28, color: Colors.grey),
+                  onPressed: _stopPlay,
+                ),
+              const SizedBox(width: 8),
+
+              // 当前小节
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _playState.isPlaying
+                          ? '第 ${_playState.currentMeasure} / ${_playState.totalMeasures} 小节'
+                          : '点击 ▶ 试听',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: _playState.isPlaying ? AppColors.textPrimary : Colors.grey,
+                      ),
+                    ),
+                    if (_playState.isPlaying)
+                      Text(
+                        '${_playState.position.inSeconds}s / ${_playState.duration.inSeconds}s',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                  ],
+                ),
+              ),
+
+              // 变速控制
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButton<double>(
+                  value: _playbackRate,
+                  underline: const SizedBox.shrink(),
+                  isDense: true,
+                  items: const [
+                    DropdownMenuItem(value: 0.5, child: Text('0.5x', style: TextStyle(fontSize: 12))),
+                    DropdownMenuItem(value: 0.75, child: Text('0.75x', style: TextStyle(fontSize: 12))),
+                    DropdownMenuItem(value: 1.0, child: Text('1.0x', style: TextStyle(fontSize: 12))),
+                    DropdownMenuItem(value: 1.25, child: Text('1.25x', style: TextStyle(fontSize: 12))),
+                    DropdownMenuItem(value: 1.5, child: Text('1.5x', style: TextStyle(fontSize: 12))),
+                    DropdownMenuItem(value: 2.0, child: Text('2.0x', style: TextStyle(fontSize: 12))),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) _changeRate(v);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
