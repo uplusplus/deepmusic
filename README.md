@@ -10,7 +10,7 @@ DeepMusic 是 AI 驱动的音乐学习助手，Phase 1 聚焦**钢琴学习**。
 
 ### 核心功能
 
-- 🎹 **MIDI 连接** — 支持蓝牙 BLE 和 USB OTG 两种方式连接数字钢琴
+- 🎹 **MIDI 连接** — 蓝牙 BLE + USB OTG 双连接方式，自动扫描，统一事件流
 - 📖 **智能乐谱跟随** — 实时跟踪弹奏位置，自动翻页
 - 🎯 **练习评估** — 音准 + 节奏多维评分（S/A/B/C/D/F）
 - 🎼 **曲谱库** — 30 首无版权曲谱，分类筛选
@@ -33,7 +33,7 @@ DeepMusic 是 AI 驱动的音乐学习助手，Phase 1 聚焦**钢琴学习**。
 | 移动端 | Flutter 3.x + Riverpod |
 | 后端 | Express + TypeScript + Prisma |
 | 数据库 | SQLite (dev) / PostgreSQL (prod) |
-| MIDI | flutter_midi_command (BLE) + usb_serial (USB OTG) |
+| MIDI | flutter_midi_command (BLE + USB) 统一事件分发 |
 | 乐谱渲染 | OpenSheetMusicDisplay (WebView) |
 
 ---
@@ -109,19 +109,19 @@ deepmusic/
 - [x] JWT 认证 + Token 黑名单 (登出失效)
 - [x] 文件上传 (Multer) + MusicXML 文件下载
 - [x] 收藏/取消收藏 (User-Score 多对多)
-- [x] 练习会话管理 (start → note → end 流程)
-- [x] Prisma 数据模型 (Score/User/PracticeRecord/Tag/Device) + 迁移
+- [x] 练习会话持久化 (Prisma PracticeSession, 事务化操作, 替代内存 Map)
+- [x] Prisma 数据模型 (Score/User/PracticeRecord/PracticeSession/Tag/Device) + 迁移
 - [x] 19 首乐谱种子数据导入
 
 **移动端核心模块**
 - [x] Flutter 项目结构 + feature-based 组织
 - [x] Riverpod 状态管理 + 路由配置
 - [x] Dart 数据模型 (Score/Part/Measure/Note/TimeSignature/KeySignature)
-- [x] MusicXML 解析器 (score-partwise 格式，含 divisions/和弦/休止符)
+- [x] MusicXML 解析器 (score-partwise + timewise，含 divisions/和弦/休止符/变拍号)
 - [x] OSMD 乐谱渲染器 (WebView + JS Bridge 双向通信)
-- [x] ScoreFollower 乐谱跟随引擎 (容错/翻页/进度流)
+- [x] ScoreFollower 乐谱跟随引擎 (和弦组匹配/容错跳过/翻页/进度流)
 - [x] NoteEvaluator 音符评估器 (音准+节奏双维度评分)
-- [x] MidiService MIDI 服务框架 (Stream 广播)
+- [x] MidiService MIDI 服务 (BLE + USB 双连接, Stream 广播, 自动扫描)
 - [x] API Client (Dio + Token 管理)
 - [x] Auth Repository (register/login/logout/token 持久化)
 - [x] Score Repository (列表/搜索/详情/下载/收藏)
@@ -133,20 +133,19 @@ deepmusic/
 - [x] HomePage — 设备连接卡片/快速开始/底部导航
 - [x] ScoreLibraryPage — 乐谱库浏览 (分类/搜索/筛选)
 - [x] ScoreViewPage — 乐谱详情 + OSMD 渲染集成 + 收藏
-- [x] PracticePage — 练习界面 (实时统计/控制面板/报告弹窗)
+- [x] PracticePage — 练习界面 (和弦显示/实时统计/控制面板/报告弹窗)
 - [x] PracticeHistoryPage — 练习历史 (分页/下拉刷新/左滑删除/详情)
 - [x] StatisticsPage — 学习统计 (累计时长/等级分布/最佳成绩)
-- [x] DeviceListPage — MIDI 设备扫描连接
+- [x] DeviceListPage — MIDI 设备扫描连接 (USB/BLE 分组展示)
 - [x] ProfilePage — 个人页面 (用户信息/统计/菜单/登出)
 
 ### ⏳ 进行中
-- [ ] 蓝牙 MIDI 底层实现 (flutter_midi_command 真机调试)
-- [ ] USB MIDI 支持 (usb_serial + OTG 热插拔)
-- [ ] ScoreFollower 和弦支持
+- [ ] 蓝牙 MIDI + USB MIDI 真机调试 (需 Yamaha P125 + Android 设备)
+- [ ] 端到端集成测试
 
 ### 📋 待开发
 - [ ] 离线乐谱缓存
-- [ ] 端到端测试
+- [ ] ScoreFollower 力度/表情评估
 - [ ] App 发布 (Google Play / App Store)
 
 ---
@@ -160,4 +159,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-20 19:52*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-20 20:15*
