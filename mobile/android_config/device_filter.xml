@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB MIDI 设备: Audio Class (1) + MIDI Streaming Subclass (3) -->
+    <usb-device class="255" subclass="3" protocol="0" /> <!-- Vendor-specific MIDI -->
+    <usb-device vendor-id="1257" /> <!-- Yamaha -->
+    <usb-device vendor-id="1410" /> <!-- Roland -->
+    <usb-device vendor-id="2536" /> <!-- AKAI -->
+    <usb-device vendor-id="4660" /> <!-- Novation -->
+    <usb-device vendor-id="6092" /> <!-- Korg -->
+</resources>

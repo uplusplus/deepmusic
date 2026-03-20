@@ -25,6 +25,8 @@ dependencies:
 
   # MIDI
   flutter_midi_command: ^0.5.2
+  # USB OTG (Android only)
+  usb_serial: ^0.5.1
 
   # XML 解析 (MusicXML)
   xml: ^6.3.0

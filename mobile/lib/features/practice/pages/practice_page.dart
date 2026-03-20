@@ -2,30 +2,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../data/repositories/score_repository.dart';
 import '../../midi/services/midi_service.dart';
 import '../../score/models/score.dart';
+import '../../score/widgets/score_renderer.dart';
 import '../models/note_event.dart';
 import '../services/score_follower.dart';
 import '../services/note_evaluator.dart';
 
-/// 练习状态
-enum PracticeState {
-  idle,
-  ready,
-  playing,
-  paused,
-  completed,
-}
+enum PracticeState { idle, ready, playing, paused, completed }
 
 class PracticePage extends ConsumerStatefulWidget {
   final String scoreId;
   final Score? score;
 
-  const PracticePage({
-    super.key,
-    required this.scoreId,
-    this.score,
-  });
+  const PracticePage({super.key, required this.scoreId, this.score});
 
   @override
   ConsumerState<PracticePage> createState() => _PracticePageState();
@@ -36,6 +27,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   ScoreFollower? _follower;
   final NoteEvaluator _evaluator = NoteEvaluator();
   final MidiService _midiService = MidiService();
+  final ScoreRepository _scoreRepo = ScoreRepository();
 
   PracticeProgress? _progress;
   List<NoteEvaluation> _evaluations = [];
@@ -49,10 +41,18 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   String? _connectedDeviceName;
   MidiConnectionType? _connectionType;
 
+  // OSMD 渲染
+  String? _xmlContent;
+  bool _isLoadingXml = true;
+  String? _xmlError;
+  int _highlightMeasure = 1;
+  ScoreRenderInfo? _renderInfo;
+
   @override
   void initState() {
     super.initState();
     _initMidiConnection();
+    _loadScoreXml();
   }
 
   void _initMidiConnection() {
@@ -65,9 +65,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
           if (state == MidiConnectionState.connected) {
             _state = PracticeState.ready;
           } else if (state == MidiConnectionState.disconnected) {
-            if (_state == PracticeState.ready) {
-              _state = PracticeState.idle;
-            }
+            if (_state == PracticeState.ready) _state = PracticeState.idle;
           }
         });
       }
@@ -77,6 +75,25 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       _state = PracticeState.ready;
       _connectedDeviceName = _midiService.connectedDevice?.name;
       _connectionType = _midiService.connectionType;
+    }
+  }
+
+  Future<void> _loadScoreXml() async {
+    setState(() {
+      _isLoadingXml = true;
+      _xmlError = null;
+    });
+    try {
+      final xml = await _scoreRepo.getScoreXml(widget.scoreId);
+      if (mounted) setState(() {
+        _xmlContent = xml;
+        _isLoadingXml = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() {
+        _xmlError = e.toString();
+        _isLoadingXml = false;
+      });
     }
   }
 
@@ -92,6 +109,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       _state = PracticeState.playing;
       _startTime = DateTime.now();
       _evaluations = [];
+      _highlightMeasure = 1;
     });
 
     _follower = ScoreFollower(widget.score!);
@@ -100,6 +118,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       if (mounted) {
         setState(() {
           _progress = progress;
+          _highlightMeasure = progress.currentMeasure;
           if (progress.completionPercentage >= 1.0) {
             _state = PracticeState.completed;
             _showReport();
@@ -124,7 +143,6 @@ class _PracticePageState extends ConsumerState<PracticePage> {
 
     if (!noteEvent.isNoteOn) return;
 
-    // 评估单个音符
     final expectedNote = _follower!.getCurrentExpectedNote();
     if (expectedNote != null) {
       final expectedStartMs = expectedNote.startMs;
@@ -179,7 +197,36 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       _progress = null;
       _evaluations = [];
       _startTime = null;
+      _highlightMeasure = 1;
     });
+  }
+
+  // ── 手动翻页 ──
+
+  void _onPageSwipe(DragEndDetails details) {
+    if (_follower == null) return;
+    final velocity = details.primaryVelocity ?? 0;
+    const threshold = 300.0;
+
+    if (velocity < -threshold) {
+      // 向左滑 → 下一页
+      final nextPage = _follower!.currentPage + 1;
+      if (nextPage <= _follower!.totalPages) {
+        _follower!.jumpToPage(nextPage);
+        setState(() {
+          _highlightMeasure = _follower!.currentMeasure;
+        });
+      }
+    } else if (velocity > threshold) {
+      // 向右滑 → 上一页
+      final prevPage = _follower!.currentPage - 1;
+      if (prevPage >= 1) {
+        _follower!.jumpToPage(prevPage);
+        setState(() {
+          _highlightMeasure = _follower!.currentMeasure;
+        });
+      }
+    }
   }
 
   void _showReport() {
@@ -209,6 +256,8 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     super.dispose();
   }
 
+  // ── Build ──
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -216,10 +265,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
         title: Text(_state == PracticeState.playing ? '练习中' : '准备练习'),
         actions: [
           if (_state == PracticeState.playing || _state == PracticeState.paused)
-            IconButton(
-              icon: const Icon(Icons.stop),
-              onPressed: _stopPractice,
-            ),
+            IconButton(icon: const Icon(Icons.stop), onPressed: _stopPractice),
         ],
       ),
       body: Column(
@@ -231,8 +277,13 @@ class _PracticePageState extends ConsumerState<PracticePage> {
               backgroundColor: AppColors.divider,
               valueColor: const AlwaysStoppedAnimation(AppColors.primary),
             ),
-          Expanded(flex: 3, child: _buildScoreArea()),
+          // ★ 乐谱渲染区 — 占据主要空间
+          Expanded(flex: 5, child: _buildScoreArea()),
+          // 实时音符指示
+          _buildCurrentNoteBar(),
+          // 键盘可视化
           _buildKeyboard(),
+          // 统计 & 控制
           _buildControlPanel(),
         ],
       ),
@@ -250,8 +301,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
         final typeLabel = _connectionType == MidiConnectionType.usb ? 'USB' : 'BLE';
         text = '已连接 ($typeLabel): $_connectedDeviceName';
         icon = _connectionType == MidiConnectionType.usb
-            ? Icons.usb
-            : Icons.bluetooth_connected;
+            ? Icons.usb : Icons.bluetooth_connected;
         break;
       case MidiConnectionState.connecting:
       case MidiConnectionState.scanning:
@@ -284,120 +334,157 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   }
 
   Widget _buildScoreArea() {
+    // ★ 核心: OSMD 乐谱渲染 + 手势翻页
+    if (_isLoadingXml) {
+      return const Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          CircularProgressIndicator(strokeWidth: 2),
+          SizedBox(height: 12),
+          Text('加载乐谱...', style: TextStyle(color: Colors.grey)),
+        ]),
+      );
+    }
+
+    if (_xmlError != null) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+          const SizedBox(height: 12),
+          Text(_xmlError!, style: const TextStyle(color: AppColors.error)),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _loadScoreXml,
+            icon: const Icon(Icons.refresh),
+            label: const Text('重试'),
+          ),
+        ]),
+      );
+    }
+
+    if (_xmlContent == null || _xmlContent!.isEmpty) {
+      return const Center(
+        child: Text('乐谱文件为空', style: TextStyle(color: Colors.grey)),
+      );
+    }
+
+    // OSMD WebView + 手势翻页
+    return GestureDetector(
+      onHorizontalDragEnd: _onPageSwipe,
+      child: Stack(
+        children: [
+          ScoreRenderer(
+            musicXml: _xmlContent!,
+            highlightMeasure: _state == PracticeState.playing ? _highlightMeasure : null,
+            onRendered: (info) {
+              setState(() => _renderInfo = info);
+            },
+            onError: (error) {
+              debugPrint('Score render error: $error');
+            },
+          ),
+
+          // 页码指示器
+          if (_follower != null)
+            Positioned(
+              bottom: 8,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '第 ${_follower!.currentPage} / ${_follower!.totalPages} 页  ·  第 $_highlightMeasure 小节',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
+
+          // 准备状态提示
+          if (_state == PracticeState.ready || _state == PracticeState.idle)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black26,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 16)],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _state == PracticeState.ready ? Icons.play_circle : Icons.bluetooth_disabled,
+                          size: 48,
+                          color: _state == PracticeState.ready ? AppColors.primary : Colors.grey,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _state == PracticeState.ready ? '按下琴键或点击开始' : '请先连接 MIDI 设备',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentNoteBar() {
     final currentGroup = _follower?.getCurrentExpectedGroup();
-    final upcomingNotes = _follower?.getUpcomingNotes(count: 8) ?? [];
     final isChord = currentGroup?.isChord ?? false;
 
     return Container(
-      color: Colors.white,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
+      ),
+      child: Row(
         children: [
+          // 当前应弹音符
           if (currentGroup != null) ...[
-            // 和弦 vs 单音符显示
-            if (isChord) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: currentGroup.notes.map((note) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      note.pitch,
-                      style: const TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 4),
+            if (isChord)
+              ...currentGroup.notes.map((n) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Text(n.pitch,
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.primary)),
+              ))
+            else
+              Text(currentGroup.notes.first.pitch,
+                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.primary)),
+            if (isChord)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                margin: const EdgeInsets.only(left: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text(
-                  '和弦',
-                  style: TextStyle(fontSize: 12, color: AppColors.primary),
-                ),
+                child: const Text('和弦', style: TextStyle(fontSize: 10, color: AppColors.primary)),
               ),
-            ] else ...[
-              Text(
-                currentGroup.notes.first.pitch,
-                style: const TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
+          ] else
+            const Text('—', style: TextStyle(fontSize: 24, color: Colors.grey)),
+
+          const Spacer(),
+
+          // 接下来音符
+          if (_follower != null)
             Text(
-              '第 ${_follower!.currentMeasure} 小节 · '
-              '第 ${_follower!.currentPage}/${_follower!.totalPages} 页',
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ] else ...[
-            const Icon(Icons.music_note, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            const Text('乐谱跟随区域'),
-          ],
-
-          const SizedBox(height: 24),
-
-          // 音符预览
-          if (upcomingNotes.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 4,
-                runSpacing: 4,
-                children: upcomingNotes.map((note) {
-                  final isExpected = currentGroup?.expectedPitchNumbers
-                          .contains(note.pitchNumber) ??
-                      false;
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isExpected
-                          ? AppColors.primary
-                          : AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      note.pitch,
-                      style: TextStyle(
-                        color: isExpected ? Colors.white : AppColors.primary,
-                        fontWeight:
-                            isExpected ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 13,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-
-          if (_state == PracticeState.ready)
-            const Padding(
-              padding: EdgeInsets.only(top: 24),
-              child: Text(
-                '按下琴键开始练习',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ),
-          if (_state == PracticeState.paused)
-            const Padding(
-              padding: EdgeInsets.only(top: 24),
-              child: Text(
-                '已暂停',
-                style: TextStyle(color: AppColors.warning, fontSize: 18),
-              ),
+              '→ ${_follower!.getUpcomingNotes(count: 3).map((n) => n.pitch).join('  ')}',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
             ),
         ],
       ),
@@ -408,13 +495,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     final currentNote = _follower?.getCurrentExpectedNote();
     final baseOctave = currentNote != null ? (currentNote.pitchNumber ~/ 12) - 1 : 4;
     final baseNote = baseOctave * 12;
-
-    // 收集当前和弦组的所有期望音符
-    final expectedPitches =
-        _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {};
+    final expectedPitches = _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {};
 
     return Container(
-      height: 100,
+      height: 80,
       color: Colors.grey[100],
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Center(
@@ -427,30 +511,25 @@ class _PracticePageState extends ConsumerState<PracticePage> {
 
             if (isBlack) {
               return Container(
-                width: 20,
-                height: 60,
-                margin: const EdgeInsets.symmetric(horizontal: -10),
+                width: 18, height: 48,
+                margin: const EdgeInsets.symmetric(horizontal: -9),
                 decoration: BoxDecoration(
                   color: isExpected ? AppColors.primary : Colors.black,
                   borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(3),
-                    bottomRight: Radius.circular(3),
-                  ),
+                    bottomLeft: Radius.circular(3), bottomRight: Radius.circular(3)),
                 ),
               );
             }
 
             return Expanded(
               child: Container(
-                height: 90,
+                height: 72,
                 margin: const EdgeInsets.symmetric(horizontal: 0.5),
                 decoration: BoxDecoration(
                   color: isExpected ? AppColors.primaryLight : Colors.white,
                   border: Border.all(color: Colors.grey[300]!),
                   borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(3),
-                    bottomRight: Radius.circular(3),
-                  ),
+                    bottomLeft: Radius.circular(3), bottomRight: Radius.circular(3)),
                 ),
               ),
             );
@@ -468,17 +547,14 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     final completion = _progress?.completionPercentage ?? 0;
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatItem(
-                '音准',
-                '${(pitchAccuracy * 100).toInt()}%',
-                pitchAccuracy > 0.8 ? AppColors.success : AppColors.error,
-              ),
+              _buildStatItem('音准', '${(pitchAccuracy * 100).toInt()}%',
+                  pitchAccuracy > 0.8 ? AppColors.success : AppColors.error),
               _buildStatItem('正确', '$correctNotes', AppColors.success),
               _buildStatItem('错误', '$wrongNotes',
                   wrongNotes > 0 ? AppColors.error : AppColors.textSecondary),
@@ -487,23 +563,17 @@ class _PracticePageState extends ConsumerState<PracticePage> {
               _buildStatItem('完成', '${(completion * 100).toInt()}%', AppColors.info),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               IconButton(
                 icon: const Icon(Icons.skip_previous),
-                onPressed: _follower != null
-                    ? () => _follower!.jumpToMeasure(1)
-                    : null,
-                iconSize: 32,
+                onPressed: _follower != null ? () => _follower!.jumpToMeasure(1) : null,
+                iconSize: 28,
               ),
               _buildMainButton(),
-              IconButton(
-                icon: const Icon(Icons.replay),
-                onPressed: _resetPractice,
-                iconSize: 32,
-              ),
+              IconButton(icon: const Icon(Icons.replay), onPressed: _resetPractice, iconSize: 28),
             ],
           ),
         ],
@@ -516,73 +586,59 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       case PracticeState.idle:
         return ElevatedButton.icon(
           onPressed: null,
-          icon: const Icon(Icons.bluetooth_disabled),
+          icon: const Icon(Icons.bluetooth_disabled, size: 18),
           label: const Text('请先连接 MIDI'),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          ),
+          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
         );
       case PracticeState.ready:
         return ElevatedButton.icon(
           onPressed: _startPractice,
-          icon: const Icon(Icons.play_arrow),
+          icon: const Icon(Icons.play_arrow, size: 18),
           label: const Text('开始练习'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            backgroundColor: AppColors.primary,
-          ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            backgroundColor: AppColors.primary),
         );
       case PracticeState.playing:
         return ElevatedButton.icon(
           onPressed: _pausePractice,
-          icon: const Icon(Icons.pause),
+          icon: const Icon(Icons.pause, size: 18),
           label: const Text('暂停'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            backgroundColor: AppColors.warning,
-          ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            backgroundColor: AppColors.warning),
         );
       case PracticeState.paused:
         return ElevatedButton.icon(
           onPressed: _resumePractice,
-          icon: const Icon(Icons.play_arrow),
+          icon: const Icon(Icons.play_arrow, size: 18),
           label: const Text('继续'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            backgroundColor: AppColors.primary,
-          ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            backgroundColor: AppColors.primary),
         );
       case PracticeState.completed:
         return ElevatedButton.icon(
           onPressed: _showReport,
-          icon: const Icon(Icons.assessment),
+          icon: const Icon(Icons.assessment, size: 18),
           label: const Text('查看报告'),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            backgroundColor: AppColors.info,
-          ),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            backgroundColor: AppColors.info),
         );
     }
   }
 
   Widget _buildStatItem(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(value,
-            style: TextStyle(
-                fontSize: 20, fontWeight: FontWeight.bold, color: color)),
-        const SizedBox(height: 2),
-        Text(label,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
-      ],
-    );
+    return Column(children: [
+      Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+      Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
+    ]);
   }
 
   Widget _buildReportSheet(PracticeReport report) {
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.5,
-      maxChildSize: 0.9,
+      initialChildSize: 0.7, minChildSize: 0.5, maxChildSize: 0.9,
       builder: (context, scrollController) {
         return Container(
           decoration: const BoxDecoration(
@@ -593,69 +649,41 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             controller: scrollController,
             padding: const EdgeInsets.all(24),
             children: [
-              Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(report.grade,
-                            style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary)),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text('综合评分: ${report.overallScore.toInt()}',
-                        style: const TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(report.formattedDuration,
-                        style: const TextStyle(color: Colors.grey)),
-                  ],
+              Center(child: Column(children: [
+                Container(
+                  width: 60, height: 60,
+                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), shape: BoxShape.circle),
+                  child: Center(child: Text(report.grade,
+                      style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.primary))),
                 ),
-              ),
+                const SizedBox(height: 12),
+                Text('综合评分: ${report.overallScore.toInt()}',
+                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                Text(report.formattedDuration, style: const TextStyle(color: Colors.grey)),
+              ])),
               const SizedBox(height: 24),
               _buildScoreRow('音准', report.pitchScore),
               const SizedBox(height: 12),
               _buildScoreRow('节奏', report.rhythmScore),
               const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildReportStat('总音符', report.totalNotes.toString()),
-                  _buildReportStat('正确', report.correctNotes.toString()),
-                  _buildReportStat('错误', report.wrongNotes.toString()),
-                  _buildReportStat('遗漏', report.missedNotes.toString()),
-                ],
-              ),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                _buildReportStat('总音符', report.totalNotes.toString()),
+                _buildReportStat('正确', report.correctNotes.toString()),
+                _buildReportStat('错误', report.wrongNotes.toString()),
+                _buildReportStat('遗漏', report.missedNotes.toString()),
+              ]),
               const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _resetPractice();
-                      },
-                      child: const Text('再来一次'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('返回'),
-                    ),
-                  ),
-                ],
-              ),
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: () { Navigator.pop(context); _resetPractice(); },
+                  child: const Text('再来一次'),
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('返回'),
+                )),
+              ]),
             ],
           ),
         );
@@ -664,46 +692,24 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   }
 
   Widget _buildScoreRow(String label, double score) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-            Text('${score.toInt()}%',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: score / 100,
-            minHeight: 8,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation(
-              score >= 80
-                  ? AppColors.success
-                  : score >= 60
-                      ? AppColors.warning
-                      : AppColors.error,
-            ),
-          ),
-        ),
-      ],
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+        Text('${score.toInt()}%', style: const TextStyle(fontWeight: FontWeight.bold)),
+      ]),
+      const SizedBox(height: 6),
+      ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
+        value: score / 100, minHeight: 8, backgroundColor: Colors.grey[200],
+        valueColor: AlwaysStoppedAnimation(
+          score >= 80 ? AppColors.success : score >= 60 ? AppColors.warning : AppColors.error),
+      )),
+    ]);
   }
 
   Widget _buildReportStat(String label, String value) {
-    return Column(
-      children: [
-        Text(value,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(color: Colors.grey, fontSize: 12)),
-      ],
-    );
+    return Column(children: [
+      Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+    ]);
   }
 }
