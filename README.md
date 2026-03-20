@@ -149,7 +149,7 @@ deepmusic/
 
 ### 📋 待开发
 - [ ] 离线乐谱缓存 (Hive 本地存储)
-- [ ] 横屏/竖屏适配
+- [x] 横屏/竖屏适配 (Practice/ScoreView/ScoreLibrary/Home 自适应布局)
 - [ ] 暗色模式
 - [ ] ScoreFollower 力度/表情评估 (Phase 2)
 - [ ] App 发布 (Google Play / App Store)
@@ -165,4 +165,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-20 20:38*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-20 20:41*
