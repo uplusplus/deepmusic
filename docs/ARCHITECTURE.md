@@ -665,15 +665,15 @@ npm run scores:import  # 导入乐谱数据
 | 文件上传 | ✅ | Multer + MusicXML 过滤 |
 | Prisma Schema | ✅ | 5 个模型，关系完整 |
 | 乐谱种子数据 | ✅ | 30 首已导入 |
-| Practice 路由 | ⚠️ | 空壳，端点为 TODO |
-| MIDI Service (蓝牙) | ⚠️ | Dart 框架 + 流式 API，底层蓝牙待真机调试 |
-| MIDI Service (USB) | ❌ | 需添加 USB OTG 支持 |
-| Score Follower | ⚠️ | 简单音符匹配，缺少容错/和弦支持 |
-| Note Evaluator | ✅ | 评分逻辑完整 |
-| MusicXML Parser | ❌ | 需实现 |
-| 乐谱渲染 (OSMD) | ❌ | 需实现 |
-| 练习会话管理 | ❌ | 需实现 |
+| Practice 路由 | ✅ | 完整实现 + Prisma 事务 + 会话持久化 |
+| MIDI Service (蓝牙) | ⚠️ | BLE 扫描/连接/数据接收完成，断线自动重连，待真机调试 |
+| MIDI Service (USB) | ⚠️ | USB OTG 底层 UsbSerial 枚举/连接/协议解析，热插拔检测，待真机调试 |
+| Score Follower | ✅ | 单音符 + 和弦组匹配，容错跳过，翻页信号，手动翻页 |
+| Note Evaluator | ✅ | 音准+节奏双维度，报告生成 |
+| MusicXML Parser | ✅ | score-partwise + timewise，变拍号，和弦/休止符/backup/forward |
+| 乐谱渲染 (OSMD) | ✅ | WebView OSMD 集成，高亮控制，滚动，缩放，练习页集成 |
+| 练习会话管理 | ✅ | Prisma PracticeSession 持久化，事务化操作 |
 
 ---
 
-*架构负责人: 项目团队 | 更新: 2026-03-20*
+*架构负责人: 项目团队 | 更新: 2026-03-20 20:24*
