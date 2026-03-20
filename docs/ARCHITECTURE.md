@@ -619,6 +619,246 @@ noteIndex: C=0, C#=1, D=2, D#=3, E=4, F=5, F#=6, G=7, G#=8, A=9, A#=10, B=11
 
 ---
 
+
+
+## 4.5 区间循环练习 (F8)
+
+### 数据流
+
+```
+用户选择区间 [startMeasure, endMeasure]
+    │
+    └── ScoreFollower.setLoopRange(start, end)
+          │
+          ├── 计算区间对应的 _chordGroup 起止索引
+          ├── 设置 _loopStartGroupIndex / _loopEndGroupIndex
+          └── 标记 _loopEnabled = true
+
+循环中:
+    processMidiEvent()
+        │
+        ├── 正常匹配逻辑
+        │
+        └── _advanceToNextGroup()
+              │
+              └── if (_currentGroupIndex > _loopEndGroupIndex)
+                    ├── _loopCycle++
+                    ├── 生成本次循环评分 → LoopCycleScore
+                    ├── _currentGroupIndex = _loopStartGroupIndex
+                    └── _emitProgress() (含 loopCycle 字段)
+```
+
+### ScoreFollower 扩展
+
+```dart
+// 新增属性
+int? _loopStartGroupIndex;
+int? _loopEndGroupIndex;
+bool _loopEnabled = false;
+int _loopCycle = 0;
+List<double> _loopCycleScores = [];
+
+// 新增方法
+void setLoopRange(int startMeasure, int endMeasure) {
+  _loopStartGroupIndex = _findGroupIndexForMeasure(startMeasure);
+  _loopEndGroupIndex = _findGroupIndexForMeasure(endMeasure);
+  _loopEnabled = true;
+  _loopCycle = 0;
+  _loopCycleScores.clear();
+}
+
+void clearLoopRange() {
+  _loopEnabled = false;
+  _loopStartGroupIndex = null;
+  _loopEndGroupIndex = null;
+}
+
+// 在 _advanceToNextGroup() 中追加:
+if (_loopEnabled && _currentGroupIndex > _loopEndGroupIndex!) {
+  _loopCycleScores.add(currentCycleScore);
+  _loopCycle++;
+  _currentGroupIndex = _loopStartGroupIndex!;
+  // 重置循环内统计
+}
+```
+
+### PracticeProgress 扩展
+
+```dart
+class PracticeProgress {
+  // ... 原有字段
+  final bool loopEnabled;
+  final int loopCycle;
+  final int? loopStartMeasure;
+  final int? loopEndMeasure;
+  final double? loopBestScore;
+}
+```
+
+### OSMD 区间高亮
+
+```javascript
+// index.html 新增 JS 方法
+function highlightLoopRange(startMeasure, endMeasure) {
+  clearHighlight();
+  const svg = document.querySelector('#score-container svg');
+  for (let i = startMeasure; i <= endMeasure; i++) {
+    if (i >= measurePositions.length) break;
+    const pos = measurePositions[i];
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', 'loop-highlight');
+    rect.setAttribute('x', pos.x);
+    rect.setAttribute('y', pos.y - 10);
+    rect.setAttribute('width', pos.width);
+    rect.setAttribute('height', pos.height + 20);
+    rect.setAttribute('fill', 'rgba(255, 193, 7, 0.15)');
+    rect.setAttribute('stroke', 'rgba(255, 193, 7, 0.5)');
+    rect.setAttribute('stroke-width', '2');
+    rect.setAttribute('rx', '4');
+    svg.insertBefore(rect, svg.firstChild);
+  }
+}
+```
+
+## 4.6 自动播放乐谱 (F9)
+
+### AutoPlayer 类设计
+
+```dart
+class AutoPlayer {
+  final Score score;
+  final MidiService _midiService = MidiService();
+
+  // 调度事件列表
+  late List<ScheduledMidiEvent> _events;
+  int _eventIndex = 0;
+
+  // 播放状态
+  bool _isPlaying = false;
+  bool _isPaused = false;
+  double _playbackRate = 1.0;
+  int _startMeasure = 1;
+
+  // 时间管理
+  final Stopwatch _stopwatch = Stopwatch();
+  Timer? _tickTimer;
+
+  // 状态流
+  final _stateController = StreamController<AutoPlayState>.broadcast();
+  Stream<AutoPlayState> get stateStream => _stateController.stream;
+
+  // 进度回调
+  final _progressController = StreamController<int>.broadcast(); // currentMeasure
+  Stream<int> get measureStream => _progressController.stream;
+}
+
+class ScheduledMidiEvent {
+  final int noteNumber;
+  final int velocity;
+  final int absoluteMs;    // 从曲首开始的绝对毫秒数
+  final bool isNoteOn;
+  final int measureNumber;
+
+  ScheduledMidiEvent({ ... });
+}
+
+class AutoPlayState {
+  final bool isPlaying;
+  final bool isPaused;
+  final double progress;      // 0.0 - 1.0
+  final int currentMeasure;
+  final double playbackRate;
+  final Duration position;
+  final Duration duration;
+}
+```
+
+### 播放调度逻辑
+
+```dart
+void play({int fromMeasure = 1, double rate = 1.0}) {
+  _playbackRate = rate;
+  _startMeasure = fromMeasure;
+
+  // 从 Score.allNotes 生成调度事件
+  _events = _buildScheduledEvents();
+  _eventIndex = _findStartIndex(fromMeasure);
+
+  _stopwatch.reset();
+  _stopwatch.start();
+
+  // 10ms tick 检查待发送事件
+  _tickTimer = Timer.periodic(Duration(milliseconds: 10), (_) => _tick());
+  _isPlaying = true;
+}
+
+void _tick() {
+  if (!_isPlaying || _isPaused) return;
+
+  final elapsedMs = _stopwatch.elapsedMilliseconds;
+  final playbackMs = (elapsedMs * _playbackRate).round();
+
+  // 批量发送同一时间点的事件 (和弦支持)
+  while (_eventIndex < _events.length) {
+    final event = _events[_eventIndex];
+    final adjustedMs = (event.absoluteMs / _playbackRate).round();
+
+    if (adjustedMs > playbackMs) break; // 还没到时间
+
+    if (event.isNoteOn) {
+      _midiService.sendNoteOn(event.noteNumber, event.velocity);
+    } else {
+      _midiService.sendNoteOff(event.noteNumber);
+    }
+
+    // 通知 UI 更新小节位置
+    _progressController.add(event.measureNumber);
+    _eventIndex++;
+  }
+
+  // 播放完毕
+  if (_eventIndex >= _events.length) {
+    stop();
+  }
+}
+
+List<ScheduledMidiEvent> _buildScheduledEvents() {
+  final events = <ScheduledMidiEvent>[];
+  final notes = score.allNotes;
+  final beatMs = 60000 / (score.bpm); // 假设有 bpm 属性
+
+  for (final note in notes) {
+    final durationMs = (note.duration * beatMs).round();
+    // Note On
+    events.add(ScheduledMidiEvent(
+      noteNumber: note.pitchNumber,
+      velocity: 80,
+      absoluteMs: note.startMs,
+      isNoteOn: true,
+      measureNumber: note.measureNumber,
+    ));
+    // Note Off
+    events.add(ScheduledMidiEvent(
+      noteNumber: note.pitchNumber,
+      velocity: 0,
+      absoluteMs: note.startMs + durationMs,
+      isNoteOn: false,
+      measureNumber: note.measureNumber,
+    ));
+  }
+
+  events.sort((a, b) => a.absoluteMs.compareTo(b.absoluteMs));
+  return events;
+}
+```
+
+### OSMD 播放跟随
+
+```dart
+// AutoPlayer.measureStream → PracticePage/ScoreViewPage
+// 驱动 ScoreRenderer.highlightMeasure(currentMeasure)
+```
+
 ## 5. 构建与部署
 
 ### 5.1 移动端
@@ -673,7 +913,9 @@ npm run scores:import  # 导入乐谱数据
 | MusicXML Parser | ✅ | score-partwise + timewise，变拍号，和弦/休止符/backup/forward |
 | 乐谱渲染 (OSMD) | ✅ | WebView OSMD 集成，高亮控制，滚动，缩放，练习页集成 |
 | 练习会话管理 | ✅ | Prisma PracticeSession 持久化，事务化操作 |
+| 区间循环练习 (F8) | ❌ | ScoreFollower 循环模式 + OSMD 区间高亮 + 独立评分 |
+| 自动播放 (F9) | ❌ | AutoPlayer MIDI 调度器 + 变速 + OSMD 跟随 |
 
 ---
 
-*架构负责人: 项目团队 | 更新: 2026-03-20 20:24*
+*架构负责人: 项目团队 | 更新: 2026-03-20 20:29*

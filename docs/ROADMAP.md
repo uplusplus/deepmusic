@@ -156,10 +156,72 @@
 
 ---
 
+---
+
+### 阶段 7: 区间循环练习 (Week 7-8 新增)
+
+**目标**: 支持选择小节区间循环训练，攻克难点段落
+
+- [ ] ScoreFollower 扩展
+  - [ ] `setLoopRange(startMeasure, endMeasure)` 方法
+  - [ ] `clearLoopRange()` 方法
+  - [ ] 循环时 `_currentGroupIndex` 重置逻辑
+  - [ ] `PracticeProgress` 新增 `loopCycle`, `loopBestScore` 字段
+  - [ ] 循环内独立评分收集与趋势对比
+- [ ] OSMD 区间高亮
+  - [ ] HTML 新增 `highlightLoopRange(start, end)` JS 方法
+  - [ ] ScoreRenderer 新增 `loopStartMeasure` / `loopEndMeasure` 属性
+  - [ ] Flutter → JS 发送区间高亮指令
+- [ ] PracticePage UI
+  - [ ] 「区间选择」按钮 + 面板 (起始/结束小节滑块)
+  - [ ] 循环模式开关
+  - [ ] 循环次数指示器:「第 3/5 次」
+  - [ ] 循环结束后弹窗: 最佳成绩 + 趋势折线
+  - [ ] 退出循环 → 恢复全区练习
+- [ ] 练习记录
+  - [ ] 区间练习子记录关联到 PracticeRecord.details
+
+**产出**: 选定区间 → 循环练习 → 每次评分 → 趋势对比
+
+---
+
+### 阶段 8: 自动播放 (Week 8-9 新增)
+
+**目标**: 乐谱库任意曲目自动播放试听，支持变速
+
+- [ ] AutoPlayer 核心
+  - [ ] `ScheduledMidiEvent` 数据结构
+  - [ ] `Score.allNotes → List<ScheduledMidiEvent>` 转换
+  - [ ] `play(fromMeasure, rate)` 播放调度
+  - [ ] Stopwatch + 10ms tick 批量事件发送
+  - [ ] 和弦支持: 同一时间点多音符同时发送
+  - [ ] `pause()` / `resume()` / `stop()` 控制
+- [ ] 变速控制
+  - [ ] `playbackRate` 0.5x ~ 2.0x，步进 0.25x
+  - [ ] 变速实时生效: `adjustedMs = absoluteMs / rate`
+  - [ ] UI 滑块控制
+- [ ] OSMD 播放跟随
+  - [ ] `AutoPlayer.measureStream` → `ScoreRenderer.highlightMeasure`
+  - [ ] 播放时乐谱自动滚动
+- [ ] UI
+  - [ ] 乐谱库每首乐谱「播放」按钮 (▶️)
+  - [ ] 乐谱详情页「试听」入口
+  - [ ] 播放器浮层: 播放/暂停/停止 + 进度条 + 变速滑块
+  - [ ] 当前小节 / 总小节显示
+  - [ ] 从指定小节开始播放 (点选)
+- [ ] 依赖
+  - [ ] pubspec.yaml 添加 `just_audio` (备选音频引擎)
+  - [ ] 或复用 `MidiService.sendNoteOn/sendNoteOff` (MIDI 直出)
+
+**产出**: 乐谱库点击播放 → OSMD 跟随高亮 → 变速控制 → 全曲播放完毕
+
+
 ## Phase 2: 功能扩展 (2026-Q2)
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
+| 区间循环练习 | 高 | 已设计，阶段 7 实现 |
+| 自动播放 | 高 | 已设计，阶段 8 实现 |
 | 完整乐谱库 (100+) | 高 | 扩充曲谱覆盖 |
 | AI 转谱 | 高 | 音频 → MusicXML |
 | 音频调优 | 中 | 噪音消除 + 音色美化 |
@@ -222,4 +284,4 @@ Practice Session ──→ Backend Practice API
 
 ---
 
-*路线图负责人: 项目团队 | 更新: 2026-03-20 20:24*
+*路线图负责人: 项目团队 | 更新: 2026-03-20 20:29*
