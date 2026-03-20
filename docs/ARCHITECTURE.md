@@ -913,9 +913,9 @@ npm run scores:import  # 导入乐谱数据
 | MusicXML Parser | ✅ | score-partwise + timewise，变拍号，和弦/休止符/backup/forward |
 | 乐谱渲染 (OSMD) | ✅ | WebView OSMD 集成，高亮控制，滚动，缩放，练习页集成 |
 | 练习会话管理 | ✅ | Prisma PracticeSession 持久化，事务化操作 |
-| 区间循环练习 (F8) | ❌ | ScoreFollower 循环模式 + OSMD 区间高亮 + 独立评分 |
-| 自动播放 (F9) | ❌ | AutoPlayer MIDI 调度器 + 变速 + OSMD 跟随 |
+| 区间循环练习 (F8) | ✅ | ScoreFollower 循环模式 + OSMD 区间高亮 + 独立评分 + UI |
+| 自动播放 (F9) | ✅ | AutoPlayer MIDI 调度器 + 变速 + OSMD 跟随 + 播放器 UI |
 
 ---
 
-*架构负责人: 项目团队 | 更新: 2026-03-20 20:29*
+*架构负责人: 项目团队 | 更新: 2026-03-20 20:38*

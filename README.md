@@ -117,11 +117,12 @@ deepmusic/
 
 **移动端核心模块**
 - [x] Flutter 项目结构 + feature-based 组织
+- [x] AutoPlayer 自动播放引擎 (MIDI 事件调度 + 变速 + OSMD 跟随)
 - [x] Riverpod 状态管理 + 路由配置
 - [x] Dart 数据模型 (Score/Part/Measure/Note/TimeSignature/KeySignature)
 - [x] MusicXML 解析器 (score-partwise + timewise，含 divisions/和弦/休止符/变拍号)
 - [x] OSMD 乐谱渲染器 (WebView + JS Bridge 双向通信)
-- [x] ScoreFollower 乐谱跟随引擎 (和弦组匹配/容错跳过/自动翻页信号/手动翻页)
+- [x] ScoreFollower 乐谱跟随引擎 (和弦组匹配/容错跳过/自动翻页/手动翻页/区间循环)
 - [x] NoteEvaluator 音符评估器 (音准+节奏双维度评分)
 - [x] MidiService MIDI 服务 (BLE + USB 双连接, USB OTG 底层, BLE 断线自动重连)
 - [x] API Client (Dio + Token 管理)
@@ -134,8 +135,8 @@ deepmusic/
 - [x] AuthPage — 登录/注册 (表单验证, 模式切换, 跳过登录)
 - [x] HomePage — 设备连接卡片/快速开始/底部导航
 - [x] ScoreLibraryPage — 乐谱库浏览 (分类/搜索/筛选)
-- [x] ScoreViewPage — 乐谱详情 + OSMD 渲染集成 + 收藏
-- [x] PracticePage — 练习界面 (OSMD 五线谱实时渲染 + 高亮跟随 + 手动翻页 + 和弦显示/报告)
+- [x] ScoreViewPage — 乐谱详情 + OSMD 渲染 + 自动播放试听 (变速 0.5x-2.0x) + 收藏
+- [x] PracticePage — 练习界面 (OSMD 渲染 + 高亮跟随 + 手动翻页 + 区间循环练习 + 和弦显示/报告)
 - [x] PracticeHistoryPage — 练习历史 (分页/下拉刷新/左滑删除/详情)
 - [x] StatisticsPage — 学习统计 (累计时长/等级分布/最佳成绩)
 - [x] DeviceListPage — MIDI 设备扫描连接 (USB/BLE 分组展示, 热插拔检测)
@@ -147,8 +148,6 @@ deepmusic/
 - [ ] 个人资料编辑 (F7.2)
 
 ### 📋 待开发
-- [ ] 区间循环练习 (F8) — 选择小节区间循环训练
-- [ ] 自动播放乐谱 (F9) — 乐谱库试听/变速播放
 - [ ] 离线乐谱缓存 (Hive 本地存储)
 - [ ] 横屏/竖屏适配
 - [ ] 暗色模式
@@ -166,4 +165,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-20 20:29*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-20 20:38*
