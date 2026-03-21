@@ -91,7 +91,13 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-21)
+## 最新更新 (2026-03-21 22:00)
+
+### 🔧 依赖与构建更新
+- 更新 Flutter 依赖锁文件 (pubspec.lock)
+- 更新 Android Gradle 版本 (gradle-wrapper.properties)
+- 服务端 `start.sh` 中 `tsc --noEmit` 因脚本文件 (`generate-scores.ts`) 隐式 any 类型报错，不影响运行；生产部署建议先单独编译或排除 scripts 目录
+- WSL 开发环境：服务绑定 `0.0.0.0:3000`，需配置 Windows 端口转发 (`netsh interface portproxy`) 方便局域网 App 连接
 
 ### 🎵 乐谱库完善
 - 完成 30 首乐谱 MusicXML 文件生成（含真实旋律音符数据）
@@ -191,4 +197,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-21 20:47*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-21 22:00*
