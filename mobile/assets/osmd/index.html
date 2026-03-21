@@ -74,18 +74,11 @@
         document.getElementById('loading').style.display = 'block';
         document.getElementById('loading').textContent = '渲染中...';
 
-        console.log('[OSMD] XML length:', xmlString.length, 'first 200 chars:', xmlString.substring(0, 200));
-
-        // 校验 XML 是否有效
-        var parser = new DOMParser();
-        var doc = parser.parseFromString(xmlString, 'text/xml');
-        var parseError = doc.getElementsByTagName('parsererror');
+        // 验证 XML 合法性，给出比 OSMD 更明确的错误信息
+        var parseError = new DOMParser().parseFromString(xmlString, 'text/xml').getElementsByTagName('parsererror');
         if (parseError.length > 0) {
-          var errMsg = parseError[0].textContent || 'XML parse error';
-          console.error('[OSMD] XML parse error:', errMsg);
-          throw new Error('XML解析失败: ' + errMsg.substring(0, 200));
+          throw new Error('XML格式错误: ' + (parseError[0].textContent || '').substring(0, 100));
         }
-        console.log('[OSMD] XML parsed OK, root:', doc.documentElement.tagName);
 
         await osmd.load(xmlString);
         await osmd.render();

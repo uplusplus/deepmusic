@@ -50,8 +50,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
 
     try {
       final xml = await _scoreRepo.getScoreXml(widget.scoreId);
-      debugPrint('[ScoreView] XML loaded, length: ${xml.length}');
-      debugPrint('[ScoreView] XML first 200: ${xml.substring(0, xml.length.clamp(0, 200))}');
       if (mounted) {
         setState(() {
           _xmlContent = xml;

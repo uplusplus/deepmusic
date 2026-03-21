@@ -81,7 +81,7 @@ function buildXml({ title, composer, timeSig, keyFifths, tempo, measures }) {
         <midi-program>1</midi-program>
       </midi-instrument>
     </score-part>
-  </part>
+  </part-list>
   <part id="P1">${measuresXml}
   </part>
 </score-partwise>`;
