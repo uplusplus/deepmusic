@@ -23,7 +23,10 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
   void initState() {
     super.initState();
     _listenToDevices();
-    _startScan();
+    // 已连接时不自动扫描，直接用缓存；未连接时才扫描
+    if (_midiService.currentState != MidiConnectionState.connected) {
+      _startScan();
+    }
   }
 
   void _listenToDevices() {
