@@ -19,6 +19,7 @@ class ApiClient {
         receiveTimeout: const Duration(seconds: 30),
         headers: {
           'Content-Type': 'application/json',
+          'X-Client': 'deepmusic-mobile/1.0',
         },
       ),
     );
