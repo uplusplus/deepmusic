@@ -113,12 +113,26 @@ class _SplashPageState extends State<SplashPage> {
     if (!mounted) return;
 
     final authRepo = AuthRepository();
-    final isLoggedIn = await authRepo.isLoggedIn();
+    final hasToken = await authRepo.isLoggedIn();
 
-    if (!mounted) return;
+    if (!hasToken) {
+      // 没有本地 token → 登录页
+      if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.auth);
+      return;
+    }
 
-    final targetRoute = isLoggedIn ? AppRouter.home : AppRouter.auth;
-    Navigator.of(context).pushReplacementNamed(targetRoute);
+    // 有本地 token → 尝试验证（联网校验 token 是否仍然有效）
+    try {
+      await authRepo.getCurrentUser();
+      if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.home);
+    } on AuthException catch (_) {
+      // token 无效/过期 → 清除本地 token，跳转登录页
+      await authRepo.logout();
+      if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.auth);
+    } catch (_) {
+      // 网络错误 → 信任本地 token，允许离线进入
+      if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.home);
+    }
   }
 
   @override
