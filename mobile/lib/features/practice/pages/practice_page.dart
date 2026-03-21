@@ -10,6 +10,7 @@ import '../../score/widgets/score_renderer.dart';
 import '../models/note_event.dart';
 import '../services/score_follower.dart';
 import '../services/note_evaluator.dart';
+import '../widgets/piano_keyboard.dart';
 
 enum PracticeState { idle, ready, playing, paused, completed }
 
@@ -354,7 +355,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
           ),
         Expanded(flex: 5, child: _buildScoreArea()),
         _buildCurrentNoteBar(),
-        _buildKeyboard(),
+        PianoKeyboard(
+          expectedPitches: _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {},
+          height: 100,
+        ),
         _buildControlPanel(),
       ],
     );
@@ -389,7 +393,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
           child: Column(
             children: [
               _buildCurrentNoteBar(),
-              Expanded(child: _buildKeyboard()),
+              Expanded(child: PianoKeyboard(
+                expectedPitches: _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {},
+                height: 100,
+              )),
               _buildControlPanel(),
             ],
           ),
@@ -601,56 +608,6 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     );
   }
 
-  Widget _buildKeyboard() {
-    final currentNote = _follower?.getCurrentExpectedNote();
-    final baseOctave = currentNote != null ? (currentNote.pitchNumber ~/ 12) - 1 : 4;
-    final baseNote = baseOctave * 12;
-    final expectedPitches = _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {};
-    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-
-    return Container(
-      height: isLandscape ? 64 : 80,
-      color: Colors.grey[100],
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Center(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(24, (index) {
-            final noteNumber = baseNote + index;
-            final isBlack = [1, 3, 6, 8, 10].contains(noteNumber % 12);
-            final isExpected = expectedPitches.contains(noteNumber);
-
-            if (isBlack) {
-              return Transform.translate(
-                offset: const Offset(-9, 0),
-                child: Container(
-                  width: 18, height: 48,
-                  decoration: BoxDecoration(
-                    color: isExpected ? AppColors.primary : Colors.black,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(3), bottomRight: Radius.circular(3)),
-                  ),
-                ),
-              );
-            }
-
-            return Expanded(
-              child: Container(
-                height: 72,
-                margin: const EdgeInsets.symmetric(horizontal: 0.5),
-                decoration: BoxDecoration(
-                  color: isExpected ? AppColors.primaryLight : Colors.white,
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(3), bottomRight: Radius.circular(3)),
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
-    );
-  }
 
   Widget _buildControlPanel() {
     final pitchAccuracy = _progress?.pitchAccuracy ?? 1.0;
