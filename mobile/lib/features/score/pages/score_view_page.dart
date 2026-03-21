@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
 import '../../../data/providers/score_provider.dart';
 import '../../../data/repositories/score_repository.dart';
+import '../models/score.dart';
+import '../services/musicxml_parser.dart';
 import '../widgets/score_renderer.dart';
 import '../../practice/services/auto_player.dart';
 
@@ -29,6 +32,8 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
 
   // 自动播放
   AutoPlayer? _autoPlayer;
+  StreamSubscription<AutoPlayState>? _playStateSub;
+  StreamSubscription<int>? _measureSub;
   AutoPlayState _playState = AutoPlayState.initial();
   double _playbackRate = 1.0;
 
@@ -38,8 +43,44 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
     _loadScoreXml();
   }
 
-  void _initAutoPlayer() {
-    // AutoPlayer 需要 Score 对象，这里仅在播放时创建
+  @override
+  void dispose() {
+    _playStateSub?.cancel();
+    _measureSub?.cancel();
+    _autoPlayer?.dispose();
+    super.dispose();
+  }
+
+  /// 从 XML 内容解析 Score 并初始化 AutoPlayer
+  void _initAutoPlayerFromXml(String xmlContent) {
+    try {
+      final score = MusicXmlParser.parseString(
+        xmlContent,
+        scoreId: widget.scoreId,
+      );
+
+      // 释放旧的
+      _playStateSub?.cancel();
+      _measureSub?.cancel();
+      _autoPlayer?.dispose();
+
+      final player = AutoPlayer(score);
+
+      // 监听播放状态
+      _playStateSub = player.stateStream.listen((state) {
+        if (mounted) setState(() => _playState = state);
+      });
+
+      // 监听小节变更 → 驱动 OSMD 高亮跟随
+      _measureSub = player.measureStream.listen((measure) {
+        if (mounted) setState(() => _highlightMeasure = measure);
+      });
+
+      _autoPlayer = player;
+      debugPrint('[ScoreViewPage] AutoPlayer initialized: ${score.totalMeasures} measures, ${score.formattedDuration}');
+    } catch (e) {
+      debugPrint('[ScoreViewPage] AutoPlayer init failed: $e');
+    }
   }
 
   Future<void> _loadScoreXml() async {
@@ -55,6 +96,8 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
           _xmlContent = xml;
           _isLoadingXml = false;
         });
+        // XML 加载完成后初始化 AutoPlayer
+        _initAutoPlayerFromXml(xml);
       }
     } catch (e) {
       if (mounted) {
@@ -93,7 +136,7 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   void _togglePlay() {
     if (_autoPlayer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('需要乐谱数据才能播放')),
+        const SnackBar(content: Text('乐谱加载中，请稍候...')),
       );
       return;
     }
@@ -173,6 +216,33 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
         _buildScoreInfoBar(score),
         _buildScoreStatsBar(score),
         Expanded(child: _buildScoreRenderer()),
+        _buildPlaybackBar(score),
+        // 开始练习按钮
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                _autoPlayer?.stop();
+                Navigator.of(context).pushNamed(
+                  AppRouter.practice,
+                  arguments: {'scoreId': score.id},
+                );
+              },
+              icon: const Icon(Icons.piano),
+              label: const Text('开始练习'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

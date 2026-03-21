@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../midi/services/midi_service.dart';
 import '../../score/models/score.dart';
+import 'audio_synth_service.dart';
 
 /// 调度的 MIDI 事件
 class ScheduledMidiEvent {
@@ -74,6 +75,8 @@ class AutoPlayer {
   int _currentMeasure = 1;
   int _totalDurationMs = 0;
 
+  final _audioSynth = AudioSynthService();
+
   final _stateController = StreamController<AutoPlayState>.broadcast();
   final _measureController = StreamController<int>.broadcast();
 
@@ -88,11 +91,20 @@ class AutoPlayer {
   int get currentMeasure => _currentMeasure;
   int get totalMeasures => score.totalMeasures;
 
+  /// 是否有物理 MIDI 设备连接
+  bool get hasMidiDevice => _midiService.connectedDevice != null;
+
   AutoPlayer(this.score) {
     _events = _buildScheduledEvents();
     if (_events.isNotEmpty) {
       _totalDurationMs = _events.last.absoluteMs;
     }
+    // 异步初始化内置合成器
+    _initSynth();
+  }
+
+  Future<void> _initSynth() async {
+    await _audioSynth.init();
   }
 
   /// 从乐谱音符生成调度事件列表
@@ -138,6 +150,7 @@ class AutoPlayer {
       // 恢复播放
       _isPaused = false;
       _stopwatch.start();
+      _audioSynth.resume();
     } else {
       // 新播放
       _eventIndex = _findStartIndex(fromMeasure);
@@ -145,6 +158,7 @@ class AutoPlayer {
       _elapsedBaseMs = 0;
       _stopwatch.reset();
       _stopwatch.start();
+      _audioSynth.resume();
     }
 
     _isPlaying = true;
@@ -166,6 +180,7 @@ class AutoPlayer {
 
     // 发送所有活跃音符的 noteOff
     _allNotesOff();
+    _audioSynth.pause();
   }
 
   /// 停止
@@ -177,6 +192,7 @@ class AutoPlayer {
     _elapsedBaseMs = 0;
     _tickTimer?.cancel();
     _allNotesOff();
+    _audioSynth.stop();
     _emitState();
     debugPrint('[AutoPlayer] Stopped');
   }
@@ -219,20 +235,21 @@ class AutoPlayer {
 
     final playbackMs = _getPlaybackMs();
 
-    // 批量发送同一时间点的事件 (和弦支持)
+    // 批量发送到达时间点的事件 (和弦支持)
     while (_eventIndex < _events.length) {
       final event = _events[_eventIndex];
-      final adjustedMs = (event.absoluteMs / _playbackRate).round();
-      final baseMs = (_elapsedBaseMs / _playbackRate).round();
 
-      if (baseMs + (_stopwatch.elapsedMilliseconds) < (event.absoluteMs / _playbackRate).round()) {
-        break;
+      if (event.absoluteMs > playbackMs) {
+        break; // 还没到这个事件的时间
       }
 
       if (event.isNoteOn) {
         _midiService.sendNoteOn(event.noteNumber, event.velocity);
+        // 内置合成器（无论是否有 MIDI 设备都播放）
+        _audioSynth.noteOn(event.noteNumber, event.velocity);
       } else {
         _midiService.sendNoteOff(event.noteNumber);
+        _audioSynth.noteOff(event.noteNumber);
       }
 
       if (event.measureNumber != _currentMeasure) {
@@ -265,6 +282,7 @@ class AutoPlayer {
     for (int note = 0; note < 128; note++) {
       _midiService.sendNoteOff(note);
     }
+    _audioSynth.allNotesOff();
   }
 
   void _emitState() {
@@ -288,6 +306,7 @@ class AutoPlayer {
   void dispose() {
     _tickTimer?.cancel();
     _allNotesOff();
+    _audioSynth.dispose();
     _stateController.close();
     _measureController.close();
   }

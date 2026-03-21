@@ -729,16 +729,103 @@ class MidiService {
     _midiEventController.add(event);
   }
 
-  void sendNoteOn(int note, int velocity) {
-    // 发送 MIDI Note On 事件 (用于自动播放)
-    // 注意: 这里只是模拟发送，实际需要通过 USB/BLE 发送 MIDI 数据
-    // 由于 flutter_midi_command 没有直接发送 MIDI 的 API，这里仅记录日志
-    debugPrint('[MidiService] sendNoteOn: note=$note, velocity=$velocity');
+  void sendNoteOn(int note, int velocity, {int channel = 0}) {
+    // MIDI Note On: status=0x90|channel, data1=note, data2=velocity
+    final statusByte = 0x90 | (channel & 0x0F);
+    final data = Uint8List.fromList([statusByte, note & 0x7F, velocity & 0x7F]);
+    _sendMidiData(data);
+    debugPrint('[MidiService] sendNoteOn: note=$note, velocity=$velocity, ch=$channel');
   }
 
-  void sendNoteOff(int note) {
-    // 发送 MIDI Note Off 事件 (用于自动播放)
-    debugPrint('[MidiService] sendNoteOff: note=$note');
+  void sendNoteOff(int note, {int channel = 0}) {
+    // MIDI Note Off: status=0x80|channel, data1=note, data2=0
+    final statusByte = 0x80 | (channel & 0x0F);
+    final data = Uint8List.fromList([statusByte, note & 0x7F, 0x00]);
+    _sendMidiData(data);
+    debugPrint('[MidiService] sendNoteOff: note=$note, ch=$channel');
+  }
+
+  /// 发送原始 MIDI 数据到已连接的设备
+  void _sendMidiData(Uint8List data) {
+    if (_connectedDevice == null) {
+      debugPrint('[MidiService] No device connected, skipping MIDI send');
+      return;
+    }
+
+    if (_connectionType == MidiConnectionType.bluetooth) {
+      _sendBleMidiData(data);
+    } else if (_connectionType == MidiConnectionType.usb) {
+      _sendUsbMidiData(data);
+    }
+  }
+
+  /// 通过 BLE 发送 MIDI 数据
+  void _sendBleMidiData(Uint8List data) {
+    try {
+      // flutter_midi_command 的 sendData 方法
+      _midiCommand.sendData(data);
+    } catch (e) {
+      debugPrint('[MidiService] BLE send failed: $e');
+    }
+  }
+
+  /// 通过 USB 发送 MIDI 数据
+  /// USB MIDI 包格式: [Cable Number | Code Index Number, MIDI_0, MIDI_1, MIDI_2]
+  void _sendUsbMidiData(Uint8List data) {
+    if (_usbPort == null) return;
+
+    try {
+      // 将标准 MIDI 消息打包为 USB MIDI 包
+      final packets = <int>[];
+      int offset = 0;
+
+      while (offset < data.length) {
+        final statusByte = data[offset];
+        final messageType = statusByte & 0xF0;
+        int cin; // Code Index Number
+
+        switch (messageType) {
+          case 0x80: // Note Off (3 bytes)
+          case 0x90: // Note On (3 bytes)
+          case 0xA0: // Polyphonic Aftertouch (3 bytes)
+          case 0xB0: // Control Change (3 bytes)
+          case 0xE0: // Pitch Bend (3 bytes)
+            cin = messageType >> 4;
+            if (offset + 2 < data.length) {
+              packets.addAll([cin, data[offset], data[offset + 1], data[offset + 2]]);
+              offset += 3;
+            } else {
+              offset = data.length; // 数据不足，终止
+            }
+            break;
+          case 0xC0: // Program Change (2 bytes)
+          case 0xD0: // Channel Aftertouch (2 bytes)
+            cin = messageType >> 4;
+            if (offset + 1 < data.length) {
+              packets.addAll([cin, data[offset], data[offset + 1], 0x00]);
+              offset += 2;
+            } else {
+              offset = data.length;
+            }
+            break;
+          case 0xF0: // System messages
+            cin = 0x5; // Single Byte / SysEx ends
+            packets.addAll([cin, data[offset], 0x00, 0x00]);
+            offset += 1;
+            break;
+          default:
+            // 未知，跳过
+            offset += 1;
+            break;
+        }
+      }
+
+      if (packets.isNotEmpty) {
+        _usbPort!.write(Uint8List.fromList(packets));
+      }
+    } catch (e) {
+      debugPrint('[MidiService] USB send failed: $e');
+    }
   }
 
   void dispose() {

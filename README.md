@@ -36,6 +36,7 @@ DeepMusic 是 AI 驱动的音乐学习助手，Phase 1 聚焦**钢琴学习**。
 | 后端 | Express + TypeScript + Prisma |
 | 数据库 | SQLite (dev) / PostgreSQL (prod) |
 | MIDI | flutter_midi_command (BLE + USB) 统一事件分发 |
+| 音频合成 | dart_melty_soundfont (SF2) + flutter_pcm_sound (PCM 输出) |
 | 乐谱渲染 | OpenSheetMusicDisplay (WebView) |
 
 ---
@@ -91,7 +92,19 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-22 03:13)
+## 最新更新 (2026-03-22 03:30)
+
+### ▶️ 乐谱播放功能 (2026-03-22)
+- 打通 `ScoreViewPage → AutoPlayer → MidiService / AudioSynthService` 完整播放流程
+- `AutoPlayer` 从 MusicXML 解析的 `Score` 对象生成 MIDI 事件序列，按时间调度
+- **内置 SF2 音频合成器**：无 MIDI 设备时自动 fallback，通过扬声器播放钢琴音色
+  - `dart_melty_soundfont` (纯 Dart SF2 合成器, 64 复音 + 混响 + 合声)
+  - `flutter_pcm_sound` (实时 PCM 音频输出, 44100Hz mono)
+  - 音色文件: `assets/sf2/Piano.sf2` (TimGM6mbEdit)
+- MIDI 真实发送：BLE 通过 `MidiCommand.sendData()`，USB 通过 `UsbPort.write()` (USB MIDI 4 字节包格式)
+- 竖屏 + 横屏均支持播放控件（播放/暂停/停止/变速/进度/当前小节）
+- OSMD 乐谱高亮跟随播放进度实时移动
+- `AutoPlayer` 生命周期与 `ScoreViewPage` 绑定，dispose 正确释放
 
 ### 🔧 蓝牙 MIDI 连接修复 (2026-03-22)
 - 修复 `flutter_midi_command` 的 `stopScanningForBluetoothDevices()` 清空设备列表导致连接失败的 bug
@@ -171,7 +184,8 @@ deepmusic/
 
 **移动端核心模块**
 - [x] Flutter 项目结构 + feature-based 组织
-- [x] AutoPlayer 自动播放引擎 (MIDI 事件调度 + 变速 + OSMD 跟随)
+- [x] AutoPlayer 自动播放引擎 (MIDI 事件调度 + 变速 + OSMD 跟随 + 内置 SF2 音频合成)
+- [x] AudioSynthService 内置音频合成器 (dart_melty_soundfont + flutter_pcm_sound, 无 MIDI 设备 fallback)
 - [x] Riverpod 状态管理 + 路由配置
 - [x] Dart 数据模型 (Score/Part/Measure/Note/TimeSignature/KeySignature)
 - [x] MusicXML 解析器 (score-partwise + timewise，含 divisions/和弦/休止符/变拍号)
@@ -189,7 +203,7 @@ deepmusic/
 - [x] AuthPage — 登录/注册 (表单验证, 模式切换, 跳过登录)
 - [x] HomePage — 设备连接卡片/快速开始/底部导航
 - [x] ScoreLibraryPage — 乐谱库浏览 (分类/搜索/筛选)
-- [x] ScoreViewPage — 乐谱详情 + OSMD 渲染 + 自动播放试听 (变速 0.5x-2.0x) + 收藏
+- [x] ScoreViewPage — 乐谱详情 + OSMD 渲染 + 自动播放试听 (变速 0.5x-2.0x, 竖屏/横屏均有播放控件) + 收藏
 - [x] PracticePage — 练习界面 (OSMD 渲染 + 高亮跟随 + 手动翻页 + 区间循环练习 + 和弦显示/报告)
 - [x] PracticeHistoryPage — 练习历史 (分页/下拉刷新/左滑删除/详情)
 - [x] StatisticsPage — 学习统计 (累计时长/等级分布/最佳成绩)
@@ -220,4 +234,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 03:13*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 03:30*

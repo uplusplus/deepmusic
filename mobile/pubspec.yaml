@@ -49,6 +49,10 @@ dependencies:
   # WebView (Phase 1 乐谱渲染)
   webview_flutter: ^4.4.2
 
+  # 音频合成 (内置钢琴音色 fallback)
+  dart_melty_soundfont: ^2.0.0
+  flutter_pcm_sound: ^1.1.0
+
   # 图标
   cupertino_icons: ^1.0.6
 
@@ -69,3 +73,4 @@ flutter:
 
   assets:
     - assets/osmd/
+    - assets/sf2/
