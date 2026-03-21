@@ -568,13 +568,15 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             final isExpected = expectedPitches.contains(noteNumber);
 
             if (isBlack) {
-              return Container(
-                width: 18, height: 48,
-                margin: const EdgeInsets.symmetric(horizontal: -9),
-                decoration: BoxDecoration(
-                  color: isExpected ? AppColors.primary : Colors.black,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(3), bottomRight: Radius.circular(3)),
+              return Transform.translate(
+                offset: const Offset(-9, 0),
+                child: Container(
+                  width: 18, height: 48,
+                  decoration: BoxDecoration(
+                    color: isExpected ? AppColors.primary : Colors.black,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(3), bottomRight: Radius.circular(3)),
+                  ),
                 ),
               );
             }
