@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../features/auth/pages/auth_page.dart';
 import '../../features/home/pages/home_page.dart';
 import '../../features/midi/pages/device_list_page.dart';
+import '../../features/midi/services/midi_service.dart';
 import '../../features/score/pages/score_library_page.dart';
 import '../../features/score/pages/score_view_page.dart';
 import '../../features/practice/pages/practice_page.dart';
@@ -124,6 +125,7 @@ class _SplashPageState extends State<SplashPage> {
     // 有本地 token → 尝试验证（联网校验 token 是否仍然有效）
     try {
       await authRepo.getCurrentUser();
+      _startAutoConnect();
       if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.home);
     } on AuthException catch (_) {
       // token 无效/过期 → 清除本地 token，跳转登录页
@@ -131,8 +133,20 @@ class _SplashPageState extends State<SplashPage> {
       if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.auth);
     } catch (_) {
       // 网络错误 → 信任本地 token，允许离线进入
+      _startAutoConnect();
       if (mounted) Navigator.of(context).pushReplacementNamed(AppRouter.home);
     }
+  }
+
+  /// 后台触发 MIDI 自动连接（不阻塞导航）
+  void _startAutoConnect() {
+    final midiService = MidiService();
+    if (midiService.currentState == MidiConnectionState.connected) return;
+    // 异步执行，不 await
+    midiService.autoConnect().catchError((e) {
+      debugPrint('[Splash] MIDI auto-connect failed: $e');
+      return false;
+    });
   }
 
   @override

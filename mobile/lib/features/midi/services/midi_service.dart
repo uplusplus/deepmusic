@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 // ignore: depend_on_referenced_packages
 import 'package:usb_serial/usb_serial.dart';
 import 'ble_permissions.dart';
@@ -527,6 +529,8 @@ class MidiService {
         _connectionType = device.connectionType;
         _updateState(MidiConnectionState.connected);
         debugPrint('[MidiService] Connected: ${device.name} via ${device.connectionType.name}');
+        // 保存到已知设备
+        _saveKnownDevice(device);
         return true;
       } else {
         _lastConnectError = '连接失败，请重试';
@@ -718,6 +722,100 @@ class MidiService {
     _connectedDevice = null;
     _connectionType = null;
     _updateState(MidiConnectionState.disconnected);
+  }
+
+  // ──────── 已知设备自动连接 ────────
+
+  static const String _knownDevicesKey = 'midi_known_devices';
+
+  /// 连接成功后保存到已知设备列表
+  Future<void> _saveKnownDevice(MidiDevice device) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final known = await _loadKnownDevices();
+
+      // 去重：按名称匹配（同一台琴 BLE 和 USB 名称相同）
+      known.removeWhere((d) => d['name'] == device.name);
+      known.add({
+        'name': device.name,
+        'type': device.connectionType.name,
+        'lastConnected': DateTime.now().toIso8601String(),
+      });
+
+      // 最多保留 10 个
+      while (known.length > 10) {
+        known.removeAt(0);
+      }
+
+      await prefs.setString(_knownDevicesKey, jsonEncode(known));
+      debugPrint('[MidiService] Saved known device: ${device.name}');
+    } catch (e) {
+      debugPrint('[MidiService] Save known device failed: $e');
+    }
+  }
+
+  /// 从 SharedPreferences 加载已知设备列表
+  Future<List<Map<String, dynamic>>> _loadKnownDevices() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_knownDevicesKey);
+      if (raw == null || raw.isEmpty) return [];
+      final list = jsonDecode(raw) as List;
+      return list.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('[MidiService] Load known devices failed: $e');
+      return [];
+    }
+  }
+
+  /// 自动连接：扫描发现已知设备后自动连接（信号最强优先）
+  ///
+  /// 返回是否成功连接
+  Future<bool> autoConnect() async {
+    if (_connectionState == MidiConnectionState.connected) return true;
+    if (_connectionState == MidiConnectionState.connecting) return false;
+
+    debugPrint('[MidiService] Auto-connect: scanning...');
+    final knownDevices = await _loadKnownDevices();
+    if (knownDevices.isEmpty) {
+      debugPrint('[MidiService] Auto-connect: no known devices');
+      return false;
+    }
+
+    final knownNames = knownDevices.map((d) => d['name'] as String).toSet();
+    debugPrint('[MidiService] Auto-connect: known devices = $knownNames');
+
+    // 扫描所有设备
+    final scanned = await scanAllDevices();
+
+    // 找到已知设备（按最近连接时间排序，最新的优先）
+    knownDevices.sort((a, b) {
+      final ta = DateTime.tryParse(a['lastConnected'] ?? '') ?? DateTime(2000);
+      final tb = DateTime.tryParse(b['lastConnected'] ?? '') ?? DateTime(2000);
+      return tb.compareTo(ta); // 最近连接的排前面
+    });
+
+    for (final known in knownDevices) {
+      final name = known['name'] as String;
+      final match = scanned.where((d) => d.name == name).toList();
+      if (match.isNotEmpty) {
+        debugPrint('[MidiService] Auto-connect: found known device "$name", connecting...');
+        final success = await connect(match.first);
+        if (success) {
+          debugPrint('[MidiService] Auto-connect: connected to $name');
+          return true;
+        }
+        debugPrint('[MidiService] Auto-connect: failed to connect to $name, trying next...');
+      }
+    }
+
+    debugPrint('[MidiService] Auto-connect: no known device found in scan');
+    _updateState(
+      _connectedDevice != null
+          ? MidiConnectionState.connected
+          : MidiConnectionState.disconnected,
+    );
+    return false;
   }
 
   void _updateState(MidiConnectionState state) {
