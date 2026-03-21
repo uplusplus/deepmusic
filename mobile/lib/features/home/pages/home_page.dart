@@ -185,9 +185,7 @@ class HomePage extends ConsumerWidget {
         title: '自由练习',
         subtitle: '开始弹奏',
         color: AppColors.accent,
-        onTap: () {
-          // TODO: 实现自由练习
-        },
+        onTap: () => Navigator.of(context).pushNamed(AppRouter.scoreLibrary),
       ),
       _QuickStartItem(
         icon: Icons.history,
