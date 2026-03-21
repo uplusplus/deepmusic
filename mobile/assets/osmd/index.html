@@ -172,8 +172,18 @@
     }
 
     function sendToFlutter(type, data) {
-      if (window.FlutterChannel && window.FlutterChannel.postMessage) {
-        window.FlutterChannel.postMessage(JSON.stringify({ type, ...data }));
+      const msg = JSON.stringify({ type, ...data });
+      try {
+        // webview_flutter 注入的 JS Channel 是全局变量 FlutterChannel
+        if (typeof FlutterChannel !== 'undefined' && FlutterChannel.postMessage) {
+          FlutterChannel.postMessage(msg);
+        } else if (window.FlutterChannel && window.FlutterChannel.postMessage) {
+          window.FlutterChannel.postMessage(msg);
+        } else {
+          console.warn('[OSMD] FlutterChannel not available, message:', msg);
+        }
+      } catch (e) {
+        console.error('[OSMD] sendToFlutter error:', e);
       }
     }
 

@@ -171,16 +171,7 @@ class _ScoreRendererState extends State<ScoreRenderer> {
   }
 
   void _renderScore() {
-    // XML 内容需要转义
-    final escapedXml = widget.musicXml
-        .replaceAll('\\', '\\\\')
-        .replaceAll("'", "\\'")
-        .replaceAll('\n', '\\n')
-        .replaceAll('\r', '');
-
-    _controller.runJavaScript(
-      "window.osmdBridge.handleMessage('{\"action\":\"render\",\"xml\":\"$escapedXml\"}');",
-    );
+    _sendMessage({'action': 'render', 'xml': widget.musicXml});
   }
 
   void _highlightMeasure(int measureIndex) {
