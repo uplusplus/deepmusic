@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import { logger } from './utils/logger.js';
+import { logger, httpLogger } from './utils/logger.js';
 import { errorHandler } from './middleware/error.js';
 import { notFoundHandler } from './middleware/notFound.js';
 
@@ -36,6 +36,8 @@ app.use('/api/', limiter);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+// HTTP 请求日志
+app.use(httpLogger);
 
 // Static files
 app.use('/uploads', express.static(process.env.UPLOAD_DIR || './uploads'));

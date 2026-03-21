@@ -25,3 +25,18 @@ export const logger = winston.createLogger({
     }),
   ],
 });
+
+// Morgan HTTP 日志流，输出到 Winston
+import morgan from 'morgan';
+
+export const morganStream = {
+  write: (message: string) => {
+    logger.info(message.trim());
+  },
+};
+
+// Morgan 格式：method url status response-time ms
+export const httpLogger = morgan(
+  ':method :url :status :response-time[3]ms - :res[content-length]',
+  { stream: morganStream }
+);
