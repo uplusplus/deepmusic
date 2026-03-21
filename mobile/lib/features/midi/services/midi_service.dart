@@ -204,13 +204,18 @@ class MidiService {
       _deviceDiscoverySub =
           _midiCommand.onMidiSetupChanged?.listen((event) {
         debugPrint('[MidiService] BLE setup changed: $event');
+        // 实时更新设备列表
         _refreshBleDeviceList();
       });
 
       // BLE 扫描需要更长时间，扩展到 8 秒
       await Future.delayed(const Duration(seconds: 8));
-      _midiCommand.stopScanningForBluetoothDevices();
+
+      // ⚠️ 必须在 stopScanning 之前读取设备！
+      // stopScanningForBluetoothDevices() 会调用 discoveredDevices.clear()
       await _refreshBleDeviceList();
+
+      _midiCommand.stopScanningForBluetoothDevices();
     } catch (e) {
       debugPrint('[MidiService] BLE scan failed: $e');
     }
