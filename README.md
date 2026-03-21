@@ -107,6 +107,14 @@ deepmusic/
 - 乐谱生成脚本 `server/src/scripts/generate-scores.ts`
 - 服务端 26 个 API 端点全部正常运行
 
+### 📱 App 修复 (2026-03-21)
+- 修复「自由练习」按钮点击无响应，跳转至乐谱库选曲
+- 修复蓝牙 MIDI 扫描无设备问题
+  - 添加 Android 12+ 运行时蓝牙权限请求（BLUETOOTH_SCAN / BLUETOOTH_CONNECT）
+  - 修复设备类型过滤逻辑，不再错误过滤 BLE 设备
+  - BLE 扫描时间 3s → 5s
+- Manifest 添加 `usesCleartextTraffic` 支持 HTTP 后端连接
+
 ---
 
 ## 开发进度
@@ -183,4 +191,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-21 20:21*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-21 20:47*
