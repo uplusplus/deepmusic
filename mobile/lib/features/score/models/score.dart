@@ -1,3 +1,6 @@
+/// 演奏手部模式
+enum HandMode { both, rightOnly, leftOnly }
+
 /// 乐谱
 class Score {
   final String id;
@@ -31,11 +34,35 @@ class Score {
   }) : addedAt = addedAt ?? DateTime.now();
 
   /// 获取所有音符 (所有声部合并，按时间排序)
-  List<Note> get allNotes {
+  List<Note> get allNotes => _filterNotes(null);
+
+  /// 右手音符 (staff == 1)
+  List<Note> get rightHandNotes => _filterNotes(1);
+
+  /// 左手音符 (staff == 2)
+  List<Note> get leftHandNotes => _filterNotes(2);
+
+  /// 是否有左右手区分
+  bool get hasHandSeparation {
+    for (final part in parts) {
+      for (final measure in part.measures) {
+        for (final note in measure.notes) {
+          if (note.staff == 2) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  List<Note> _filterNotes(int? staff) {
     final notes = <Note>[];
     for (final part in parts) {
       for (final measure in part.measures) {
-        notes.addAll(measure.notes);
+        if (staff == null) {
+          notes.addAll(measure.notes);
+        } else {
+          notes.addAll(measure.notes.where((n) => n.staff == staff || n.staff == 0));
+        }
       }
     }
     notes.sort((a, b) => a.startMs.compareTo(b.startMs));
@@ -150,7 +177,8 @@ class Note {
   final double duration;
   final int startMs;
   final int measureNumber;
-  final int staffPosition;
+  final int staff;           // 1=高音谱/右手, 2=低音谱/左手, 0=未知
+  final int staffPosition;   // 五线谱位置（已废弃，保留兼容）
 
   Note({
     required this.pitch,
@@ -158,8 +186,15 @@ class Note {
     required this.duration,
     required this.startMs,
     required this.measureNumber,
+    this.staff = 0,
     this.staffPosition = 0,
   });
+
+  /// 是否为右手音符
+  bool get isRightHand => staff == 1 || staff == 0;
+
+  /// 是否为左手音符
+  bool get isLeftHand => staff == 2;
 
   factory Note.fromPitchName(String pitchName, {required int measureNumber}) {
     const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -186,6 +221,24 @@ class Note {
     );
   }
 
+  Note copyWith({
+    String? pitch,
+    int? pitchNumber,
+    double? duration,
+    int? startMs,
+    int? measureNumber,
+    int? staff,
+  }) {
+    return Note(
+      pitch: pitch ?? this.pitch,
+      pitchNumber: pitchNumber ?? this.pitchNumber,
+      duration: duration ?? this.duration,
+      startMs: startMs ?? this.startMs,
+      measureNumber: measureNumber ?? this.measureNumber,
+      staff: staff ?? this.staff,
+    );
+  }
+
   @override
-  String toString() => 'Note($pitch, measure=$measureNumber)';
+  String toString() => 'Note($pitch, staff=$staff, measure=$measureNumber)';
 }

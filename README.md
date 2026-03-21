@@ -92,7 +92,18 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-22 05:48)
+## 最新更新 (2026-03-22 06:54)
+
+### 🔧 中文乐谱支持 (2026-03-22)
+- 清理并重建乐谱数据库，从磁盘 24 个 MusicXML 文件全部导入（含中文标题）
+- 修复 `sqlite3` CLI 插入中文编码问题，改用 Node.js (better-sqlite3) 保证 UTF-8
+- 解决数据库中重复/乱码记录
+
+### 🔧 OSMD WebView 中文乱码修复 (2026-03-22)
+- **根因**：Dart → WebView 使用 base64 编码传递 MusicXML，JS 端 `atob()` 不支持 UTF-8
+- `atob()` 按 Latin-1 处理字节，中文 3 字节序列被拆开→乱码
+- **修复**：`handleMessageB64` 改用 `Uint8Array.from(atob(b64), c => c.charCodeAt(0))` + `TextDecoder('utf-8')` 正确解码
+- 同步修复 CSS 中文字体栈：`body` 和 `svg text` 使用 `Noto Sans SC → Source Han Sans CN → WenQuanYi Micro Hei → Droid Sans Fallback → system-ui`
 
 ### ✅ MIDI 自动连接 (2026-03-22)
 - 记录已连接设备到 SharedPreferences（名称 + 类型 + 连接时间，最多 10 个）
@@ -251,4 +262,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 05:48*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 06:54*

@@ -1,15 +1,24 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>OSMD Score Renderer</title>
   <style>
+    /* 系统 CJK 字体栈，无需加载外部字体 */
+    @font-face {
+      font-family: 'Noto Sans SC';
+      src: local('Noto Sans SC'), local('Source Han Sans CN'), local('WenQuanYi Micro Hei'), local('Droid Sans Fallback'), local('sans-serif');
+      font-weight: 100 700;
+      font-display: swap;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    svg text {
+      font-family: 'Noto Sans SC', 'Source Han Sans CN', 'WenQuanYi Micro Hei', 'Droid Sans Fallback', system-ui, sans-serif !important;
+    }
     body {
       background: #fff;
       overflow-x: hidden;
-      font-family: -apple-system, sans-serif;
+      font-family: 'Noto Sans SC', 'Source Han Sans CN', 'WenQuanYi Micro Hei', 'Droid Sans Fallback', system-ui, sans-serif;
     }
     #score-container {
       padding: 16px;
@@ -26,8 +35,10 @@
       stroke: rgba(66, 133, 244, 0.4) !important;
       stroke-width: 2px;
     }
-    .highlight-note {
-      fill: #4285f4 !important;
+    /* CJK 字体支持 */
+    #score-container text,
+    #score-container svg text {
+      font-family: "Noto Sans CJK SC", "Droid Sans Fallback", sans-serif !important;
     }
   </style>
 </head>
@@ -43,8 +54,56 @@
     let currentXml = '';
     let measurePositions = [];
 
+    // ── CJK 字体支持 ──
+    var cjkFontStack = '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "WenQuanYi Micro Hei", sans-serif';
+    var cjkFontReady = false;
+
+    // CJK 字体由 Dart 端通过 FlutterChannel 注入
+    window._loadCJKFont = function(b64) {
+      return new Promise(function(resolve, reject) {
+        try {
+          var font = new FontFace('Noto Sans SC', 'url(data:font/woff2;base64,' + b64 + ')');
+          font.load().then(function(f) {
+            document.fonts.add(f);
+            cjkFontReady = true;
+            console.log('[OSMD] CJK font loaded, size=' + b64.length);
+            resolve();
+          }).catch(function(e) {
+            console.error('[OSMD] CJK font load error:', e);
+            reject(e);
+          });
+        } catch(e) {
+          console.error('[OSMD] CJK font error:', e);
+          reject(e);
+        }
+      });
+    };
+
+
+    // 使用 FontFace API 加载字体（绕过 CSS @font-face 兼容性问题）
+    // 通过动态注入 style 加载 CJK 字体
+    // 通过 styleSheets.insertRule 加载 CJK 字体
+
+    function applyCJKFonts() {
+      var svg = document.querySelector('#score-container svg');
+      if (!svg) { console.log('[OSMD] applyCJKFonts: no SVG'); return; }
+      var texts = svg.querySelectorAll('text');
+      for (var i = 0; i < texts.length; i++) {
+        texts[i].removeAttribute('font-family');
+        texts[i].style.setProperty('font-family', cjkFontStack, 'important');
+      }
+      var tspans = svg.querySelectorAll('tspan');
+      for (var j = 0; j < tspans.length; j++) {
+        tspans[j].removeAttribute('font-family');
+        tspans[j].style.setProperty('font-family', cjkFontStack, 'important');
+      }
+      svg.style.setProperty('font-family', cjkFontStack, 'important');
+    }
+
+
     // ── 初始化 OSMD ──
     function init() {
+      requestAnimationFrame(function() {
       try {
         osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('score-container', {
           autoResize: true,
@@ -53,11 +112,19 @@
           drawComposer: false,
           drawCredits: false,
           drawPartNames: false,
-          fingeringPosition: 'below',
-          spacingBetweenTextLines: 0,
-          defaultColorMusic: '#333333',
-          coloringMode: 1,
+          pageFormat: 'Endless',
         });
+
+        // 适当增大边距
+        osmd.EngravingRules.PageLeftMargin = 3;
+        osmd.EngravingRules.PageRightMargin = 3;
+
+        // 切换到 Bravura 字体（可能解决 Gonville 渲染问题）
+        try {
+          osmd.setOptions({ defaultVexFlowNoteFont: 'Bravura' });
+        } catch(e) {
+          console.log('[DM] Font switch error: ' + e.message);
+        }
         osmd.setLogLevel('WARN');
         document.getElementById('loading').style.display = 'none';
         sendToFlutter('initialized');
@@ -65,25 +132,159 @@
         document.getElementById('loading').textContent = 'OSMD初始化失败: ' + e.message;
         sendToFlutter('error', { message: 'OSMD init failed: ' + e.message });
       }
+      }); // requestAnimationFrame
+
+      // OSMD 的 autoResize 只监听 window.resize，对 WebView 容器尺寸变化无效
+      // 用 ResizeObserver 监听 score-container 尺寸变化，手动触发重渲染
+      var resizeTimer = null;
+      var lastContainerWidth = 0;
+      if (typeof ResizeObserver !== 'undefined') {
+        var ro = new ResizeObserver(function(entries) {
+          for (var i = 0; i < entries.length; i++) {
+            var w = entries[i].contentRect.width;
+            if (w > 0 && w !== lastContainerWidth) {
+              lastContainerWidth = w;
+              clearTimeout(resizeTimer);
+              resizeTimer = setTimeout(function() {
+                if (osmd && currentXml) {
+                  console.log('[DM Resize] container width changed to ' + w + ', re-rendering');
+                  osmd.render();
+                  applyCJKFonts();
+                  collectMeasurePositions();
+                  var container = document.getElementById('score-container');
+                  sendToFlutter('rendered', {
+                    measureCount: measurePositions.length,
+                    width: container.scrollWidth,
+                    height: container.scrollHeight,
+                  });
+                }
+              }, 150);
+            }
+          }
+        });
+        ro.observe(document.getElementById('score-container'));
+      }
     }
+
 
     // ── 渲染乐谱 ──
     async function render(xmlString) {
       try {
-        currentXml = xmlString;
+        // TEST MODE: force a known-good minimal XML
+        var testMode = false;
+        if (testMode) {
+          xmlString = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n<score-partwise version="3.1">\n  <work>\n    <work-title>即兴曲 Op.90 No.4</work-title>\n  </work>\n  <identification>\n    <creator type="composer">舒伯特</creator>\n    <encoding>\n      <software>DeepMusic</software>\n      <encoding-date>2026-03-21</encoding-date>\n    </encoding>\n  </identification>\n  <part-list>\n    <score-part id="P1">\n      <part-name>Piano</part-name>\n      <score-instrument id="P1-I1">\n        <instrument-name>Piano</instrument-name>\n      </score-instrument>\n      <midi-instrument id="P1-I1">\n        <midi-channel>1</midi-channel>\n        <midi-program>1</midi-program>\n      </midi-instrument>\n    </score-part>\n  </part-list>\n  <part id="P1">\n    <measure number="1">\n      <attributes>\n        <divisions>4</divisions>\n        <key>\n          <fifths>-4</fifths>\n        </key>\n        <time>\n          <beats>3</beats>\n          <beat-type>4</beat-type>\n        </time>\n        <clef>\n          <sign>G</sign>\n          <line>2</line>\n        </clef>\n      </attributes>\n      <direction placement="above">\n        <direction-type>\n          <metronome parentheses="no">\n            <beat-unit>quarter</beat-unit>\n            <per-minute>72</per-minute>\n          </metronome>\n        </direction-type>\n        <sound tempo="72"/>\n      </direction>\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>E</step>\n          <alter>-1</alter>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="2">\n      <note>\n        <pitch>\n          <step>E</step>\n          <alter>-1</alter>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="3">\n      <note>\n        <pitch>\n          <step>G</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>E</step>\n          <alter>-1</alter>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="4">\n      <note>\n        <pitch>\n          <step>E</step>\n          <alter>-1</alter>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>G</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="5">\n      <note>\n        <pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="6">\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>F</step>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="7">\n      <note>\n        <pitch>\n          <step>E</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>C</step>\n          <octave>5</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n    <measure number="8">\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <rest/>\n        <duration>2</duration>\n        <voice>1</voice>\n        <type>eighth</type>\n        <staff>1</staff>\n      </note>\n      <note>\n        <pitch>\n          <step>A</step>\n          <alter>-1</alter>\n          <octave>4</octave>\n        </pitch>\n        <duration>4</duration>\n        <voice>1</voice>\n        <type>quarter</type>\n        <staff>1</staff>\n      </note>\n    </measure>\n  </part>\n</score-partwise>';
+        }
         document.getElementById('loading').style.display = 'block';
         document.getElementById('loading').textContent = '渲染中...';
 
-        // 验证 XML 合法性，给出比 OSMD 更明确的错误信息
-        var parseError = new DOMParser().parseFromString(xmlString, 'text/xml').getElementsByTagName('parsererror');
-        if (parseError.length > 0) {
-          throw new Error('XML格式错误: ' + (parseError[0].textContent || '').substring(0, 100));
+        if (!xmlString || xmlString.trim().length === 0) {
+          throw new Error('MusicXML 为空');
+        }
+
+        // Debug: 打印 API XML 前 300 字符用于对比
+        console.log('[DM] API xml[0:300]: ' + xmlString.substring(0, 300));
+        console.log('[DM] API xml.length=' + xmlString.length);
+
+        // Debug: 检查 XML 中的小节数
+        var xmlMeasureCount = (xmlString.match(/<measure\b/g) || []).length;
+        var xmlVoiceCount = (xmlString.match(/<voice>/g) || []).length;
+        var xmlStaffCount = (xmlString.match(/<staff>/g) || []).length;
+        console.log('[DM] XML measures=' + xmlMeasureCount + ' voices=' + xmlVoiceCount + ' staffs=' + xmlStaffCount);
+
+        // 检查第一个 note 的 XML
+        var firstNote = xmlString.match(/<note>[\s\S]*?<\/note>/);
+        if (firstNote) {
+          console.log('[DM] firstNote: ' + firstNote[0].substring(0, 200));
         }
 
         await osmd.load(xmlString);
+
+        // Debug: 检查 OSMD 的绘制限制
+        console.log('[DM] MaxMeasureToDrawIndex=' + osmd.EngravingRules.MaxMeasureToDrawIndex
+          + ' MaxMeasureToDrawNumber=' + osmd.EngravingRules.MaxMeasureToDrawNumber
+          + ' MinMeasureToDrawIndex=' + osmd.EngravingRules.MinMeasureToDrawIndex
+          + ' SourceMeasures=' + (osmd.Sheet ? osmd.Sheet.SourceMeasures.length : 'no sheet'));
+
+        // Debug: 检查 measureList 的结构
+        if (osmd.graphic && osmd.graphic.measureList) {
+          var ml = osmd.graphic.measureList;
+          console.log('[DM] measureList.length=' + ml.length);
+          for (var mi = 0; mi < Math.min(ml.length, 8); mi++) {
+            var staves = ml[mi];
+            var staveInfo = [];
+            for (var si = 0; si < staves.length; si++) {
+              var gm = staves[si];
+              // Check multiple possible voice property names
+              var vfVoices = 'none';
+              if (gm.vfVoices) vfVoices = Object.keys(gm.vfVoices).length;
+              else if (gm.Voices) vfVoices = 'Voices:' + (Array.isArray(gm.Voices) ? gm.Voices.length : typeof gm.Voices);
+              // Check staff entries (note positions)
+              var staffEntries = gm.staffEntries ? gm.staffEntries.length : 'no-se';
+              // Check VexFlow stave
+              var hasStave = gm.stave || gm.vfStave ? 'yes' : 'no';
+              // Try to access underlying measure data
+              var srcMeasure = gm.parentSourceMeasure;
+              var srcIdx = srcMeasure ? srcMeasure.MeasureNumber : '?';
+              staveInfo.push('s' + si + ':stave=' + hasStave + ',vfVoices=' + vfVoices + ',SE=' + staffEntries + ',srcM=' + srcIdx);
+            }
+            console.log('[DM] measure[' + mi + '] staves=' + staves.length + ' ' + staveInfo.join(' | '));
+          }
+        }
+
         await osmd.render();
 
+        // Debug: dump ALL properties of first graphical measure
+        if (osmd.graphic && osmd.graphic.measureList && osmd.graphic.measureList.length > 0) {
+          var gm0 = osmd.graphic.measureList[0][0];
+          var props = Object.getOwnPropertyNames(gm0);
+          var interesting = props.filter(function(p) {
+            var v = gm0[p];
+            return typeof v !== 'function' && p !== 'parent' && p !== 'PositionAndShape';
+          }).map(function(p) {
+            var v = gm0[p];
+            var s = typeof v === 'object' && v !== null ? (Array.isArray(v) ? 'arr:' + v.length : 'obj:' + Object.keys(v).slice(0,5).join(',')) : v;
+            return p + '=' + s;
+          });
+          console.log('[DM] gm0 props: ' + interesting.join(' | '));
+        }
+
+        // 等待 CJK 字体加载完成再应用
+        applyCJKFonts();
         collectMeasurePositions();
+
+
+        // Debug: SVG 检查
+        var svg = document.getElementById('score-container').querySelector('svg');
+        if (svg) {
+          console.log('[DM] SVG w=' + svg.getAttribute('width')
+            + ' h=' + svg.getAttribute('height')
+            + ' viewBox=' + svg.getAttribute('viewBox')
+            + ' measures=' + measurePositions.length
+            + ' children=' + svg.children.length);
+          var firstG = svg.querySelector('g');
+          if (firstG) {
+            var childTags = [];
+            for (var ci = 0; ci < firstG.children.length; ci++) {
+              childTags.push(firstG.children[ci].tagName + '(' + firstG.children[ci].children.length + ')');
+            }
+            console.log('[DM] firstG transform=' + firstG.getAttribute('transform')
+              + ' children=' + firstG.children.length
+              + ' tags=' + childTags.join(','));
+            // 检查嵌套子元素
+            for (var ci = 0; ci < firstG.children.length; ci++) {
+              var child = firstG.children[ci];
+              var subTags = [];
+              for (var si = 0; si < Math.min(5, child.children.length); si++) {
+                subTags.push(child.children[si].tagName);
+              }
+              console.log('[DM] g[' + ci + '] tag=' + child.tagName + ' id=' + child.getAttribute('id')
+                + ' class=' + child.getAttribute('class')
+                + ' subTags=' + subTags.join(','));
+            }
+          }
+        }
+
 
         document.getElementById('loading').style.display = 'none';
         sendToFlutter('rendered', {
@@ -242,7 +443,8 @@
 
     function handleMessageB64(b64) {
       try {
-        var json = atob(b64);
+        var bytes = Uint8Array.from(atob(b64), function(c) { return c.charCodeAt(0); });
+        var json = new TextDecoder().decode(bytes);
         handleMessage(json);
       } catch (e) {
         console.error('[OSMD] handleMessageB64 error:', e);

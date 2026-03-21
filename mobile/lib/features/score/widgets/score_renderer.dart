@@ -99,10 +99,8 @@ class _ScoreRendererState extends State<ScoreRenderer> {
         NavigationDelegate(
           onPageFinished: (_) {
             _isLoaded = true;
-            // 页面加载完成后自动渲染乐谱
-            if (widget.musicXml.isNotEmpty) {
-              _renderScore();
-            }
+            // 先注入 CJK 字体，加载完成后再渲染乐谱
+            _injectCJKFont();
           },
           onWebResourceError: (error) {
             widget.onError?.call('WebView error: ${error.description}');
@@ -116,8 +114,27 @@ class _ScoreRendererState extends State<ScoreRenderer> {
 
   Future<void> _loadHtmlAsset() async {
     final html = await rootBundle.loadString('assets/osmd/index.html');
-    // 替换 CDN 引用为本地路径 (如果有本地文件的话)
     await _controller.loadHtmlString(html);
+  }
+
+  Future<void> _injectCJKFont() async {
+    try {
+      final bytes = await rootBundle.load('assets/osmd/NotoSansSC-Regular.woff2');
+      final b64 = base64Encode(bytes.buffer.asUint8List());
+      // 注入字体并等待加载完成，再渲染乐谱
+      await _controller.runJavaScript("""
+        (async function() {
+          await window._loadCJKFont('$b64');
+          FlutterChannel.postMessage(JSON.stringify({type: 'fontReady'}));
+        })();
+      """);
+    } catch (e) {
+      debugPrint('CJK font inject error: $e');
+      // 字体注入失败也继续渲染
+      if (widget.musicXml.isNotEmpty) {
+        _renderScore();
+      }
+    }
   }
 
   // ── JS → Flutter 通信 ──
@@ -129,14 +146,19 @@ class _ScoreRendererState extends State<ScoreRenderer> {
 
       switch (type) {
         case 'initialized':
-          // OSMD 初始化完成
+          break;
+
+        case 'fontReady':
+          // CJK 字体加载完成，开始渲染乐谱
           if (widget.musicXml.isNotEmpty) {
             _renderScore();
           }
           break;
 
         case 'rendered':
-          _isRendered = true;
+          setState(() {
+            _isRendered = true;
+          });
           final info = ScoreRenderInfo(
             measureCount: data['measureCount'] ?? 0,
             width: (data['width'] ?? 0).toDouble(),
@@ -156,6 +178,9 @@ class _ScoreRendererState extends State<ScoreRenderer> {
 
         case 'positions':
           // 小节位置信息
+          break;
+        case 'debug_svg':
+          debugPrint('[DM SVG] ${data['snippet']}');
           break;
       }
     } catch (e) {

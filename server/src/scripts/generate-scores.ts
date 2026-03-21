@@ -14,16 +14,20 @@ function buildXml({ title, composer, timeSig, keyFifths, tempo, measures }) {
     let notesXml = '';
     for (const note of m) {
       const [step, octave, dur, type] = note;
-      const alter = (step.includes('#') || step.includes('b')) ? `\n          <alter>${step.endsWith('#') ? 1 : -1}</alter>` : '';
+      const isRest = step === 'rest';
+      const alter = (!isRest && (step.includes('#') || step.includes('b'))) ? `\n          <alter>${step.endsWith('#') ? 1 : -1}</alter>` : '';
       const cleanStep = step.replace(/[0-9#b]/g, '');
-      notesXml += `
-      <note>
-        <pitch>
+      const pitchOrRest = isRest ? '<rest/>' : `<pitch>
           <step>${cleanStep}</step>${alter}
           <octave>${octave}</octave>
-        </pitch>
+        </pitch>`;
+      notesXml += `
+      <note>
+        ${pitchOrRest}
         <duration>${dur}</duration>
+        <voice>1</voice>
         <type>${type}</type>
+        <staff>1</staff>
       </note>`;
     }
 

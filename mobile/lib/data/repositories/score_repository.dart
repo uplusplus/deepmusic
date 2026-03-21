@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../features/score/models/score.dart';
@@ -105,9 +106,9 @@ class ScoreRepository {
     try {
       final response = await _apiClient.dio.get(
         '/scores/$scoreId/xml',
-        options: Options(responseType: ResponseType.plain),
+        options: Options(responseType: ResponseType.bytes),
       );
-      return response.data as String;
+      return utf8.decode(response.data as List<int>);
     } on DioException catch (e) {
       throw ScoreException(e.message ?? '获取乐谱文件失败');
     }

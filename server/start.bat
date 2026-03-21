@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo 脚本所在目录: %CD%
+echo DIR: %CD%
 
 echo Checking TypeScript...
 call npx tsc --noEmit --excludeDirectories src/scripts
