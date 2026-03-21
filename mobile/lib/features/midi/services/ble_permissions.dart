@@ -1,20 +1,28 @@
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// Android 12+ (API 31+) 蓝牙权限工具
 class BlePermissions {
+  static const _platform = MethodChannel('deepmusic/device_info');
+
   /// 请求蓝牙扫描所需的全部权限
   static Future<bool> requestBlePermissions() async {
     if (!Platform.isAndroid) return true;
 
+    final sdkInt = await _getAndroidSdkInt();
     final permissions = <Permission>[];
 
-    // Android 12+ (API 31+)
-    if (await _getAndroidSdkInt() >= 31) {
+    if (sdkInt >= 31) {
+      // Android 12+ 需要 BLUETOOTH_SCAN + BLUETOOTH_CONNECT
       permissions.addAll([
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
       ]);
+      // Android 12-13 BLE 扫描仍需位置权限 (Android 14+ 不需要)
+      if (sdkInt < 34) {
+        permissions.add(Permission.locationWhenInUse);
+      }
     } else {
       // Android 11 及以下需要位置权限 + 旧版蓝牙权限
       permissions.addAll([
@@ -32,7 +40,7 @@ class BlePermissions {
     if (!allGranted) {
       final denied = statuses.entries
           .where((e) => !e.value.isGranted && !e.value.isLimited)
-          .map((e) => e.key.toString())
+          .map((e) => '${e.key}: ${e.value.name}')
           .join(', ');
       print('[BlePermissions] Denied: $denied');
     }
@@ -44,29 +52,30 @@ class BlePermissions {
   static Future<bool> hasBlePermissions() async {
     if (!Platform.isAndroid) return true;
 
-    if (await _getAndroidSdkInt() >= 31) {
-      return (await Permission.bluetoothScan.isGranted) &&
+    final sdkInt = await _getAndroidSdkInt();
+
+    if (sdkInt >= 31) {
+      final btGranted = (await Permission.bluetoothScan.isGranted) &&
           (await Permission.bluetoothConnect.isGranted);
+      // Android 12-13 还需要位置权限
+      if (sdkInt < 34) {
+        return btGranted && (await Permission.locationWhenInUse.isGranted);
+      }
+      return btGranted;
     } else {
       return (await Permission.location.isGranted) &&
           (await Permission.bluetooth.isGranted);
     }
   }
 
+  /// 获取 Android SDK 版本号
   static Future<int> _getAndroidSdkInt() async {
-    // Android 12 = SDK 31, Android 13 = SDK 33, Android 14 = SDK 34
-    // 简单方式: 通过 permission_handler 的行为推断
-    // 或者通过 platform channel 获取，这里用一个保守的默认值
+    if (!Platform.isAndroid) return 0;
     try {
-      // permission_handler 没有直接获取 SDK 版本的 API
-      // 我们通过检查 bluetoothScan 权限状态来间接判断
-      final scanStatus = await Permission.bluetoothScan.status;
-      // 如果 bluetoothScan 权限存在（Android 12+），返回 31
-      // 如果返回 denied/permanentlyDenied 也说明是 Android 12+
-      if (scanStatus != PermissionStatus.permanentlyDenied) {
-        return 31; // 假设 Android 12+
-      }
+      final sdkInt = await _platform.invokeMethod<int>('getSdkInt');
+      if (sdkInt != null) return sdkInt;
     } catch (_) {}
-    return 30; // Android 11 及以下
+    // fallback: 假设 Android 12+，至少请求 bluetoothScan/connect
+    return 31;
   }
 }

@@ -91,13 +91,23 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-21 22:00)
+## 最新更新 (2026-03-21 22:20)
+
+### 📱 蓝牙 MIDI 扫描修复 (v2)
+- 修复 `BlePermissions._getAndroidSdkInt()` 永远返回 31 的 bug，改用 Android 原生 MethodChannel (`Build.VERSION.SDK_INT`) 获取真实 SDK 版本
+- Android 12-13 正确请求 `ACCESS_FINE_LOCATION`（BLE 扫描必需，Android 14+ 已移除此要求）
+- BLE 扫描初始化流程优化：先调用 `startBluetoothCentral()` + `waitUntilBluetoothIsInitialized()` 再开始扫描
+- BLE 扫描时间 5s → 8s（BLE 发现设备需要更长时间）
+- `scanAllDevices()` 增加蓝牙开启状态检查，蓝牙关闭时给出提示
+- 新增原生 MethodChannel `deepmusic/device_info` (MainActivity.kt)
+
+### 🔧 服务端与开发环境
+- 后端服务绑定 `0.0.0.0:3000`，局域网可访问；WSL 环境需配置 Windows 端口转发 (`netsh interface portproxy`)
+- `start.sh` 中 `tsc --noEmit` 因脚本文件 (`generate-scores.ts`) 隐式 any 类型报错，不影响运行
 
 ### 🔧 依赖与构建更新
 - 更新 Flutter 依赖锁文件 (pubspec.lock)
 - 更新 Android Gradle 版本 (gradle-wrapper.properties)
-- 服务端 `start.sh` 中 `tsc --noEmit` 因脚本文件 (`generate-scores.ts`) 隐式 any 类型报错，不影响运行；生产部署建议先单独编译或排除 scripts 目录
-- WSL 开发环境：服务绑定 `0.0.0.0:3000`，需配置 Windows 端口转发 (`netsh interface portproxy`) 方便局域网 App 连接
 
 ### 🎵 乐谱库完善
 - 完成 30 首乐谱 MusicXML 文件生成（含真实旋律音符数据）
@@ -120,6 +130,7 @@ deepmusic/
   - 修复设备类型过滤逻辑，不再错误过滤 BLE 设备
   - BLE 扫描时间 3s → 5s
 - Manifest 添加 `usesCleartextTraffic` 支持 HTTP 后端连接
+- 强化自动登录逻辑，token 有效直接进主页，过期才跳登录页
 
 ---
 
@@ -197,4 +208,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-21 22:00*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-21 22:20*

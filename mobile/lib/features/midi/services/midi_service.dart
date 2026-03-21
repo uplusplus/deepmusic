@@ -162,6 +162,14 @@ class MidiService {
       debugPrint('[MidiService] BLE permissions denied, scanning USB only');
     }
 
+    // 检查蓝牙是否开启
+    if (hasPermission) {
+      final btAvailable = await isBluetoothAvailable();
+      if (!btAvailable) {
+        debugPrint('[MidiService] Bluetooth is OFF, cannot scan BLE devices');
+      }
+    }
+
     await Future.wait([
       if (hasPermission) _scanBleDevices(),
       _scanUsbDevices(),
@@ -185,6 +193,11 @@ class MidiService {
   Future<List<MidiDevice>> _scanBleDevices() async {
     _discoveredBleDevices.clear();
     try {
+      // 先初始化 BLE 中心（插件内部会检查权限并启动扫描）
+      await _midiCommand.startBluetoothCentral();
+      // 等待蓝牙状态初始化
+      await _midiCommand.waitUntilBluetoothIsInitialized();
+
       await _midiCommand.startScanningForBluetoothDevices();
 
       _deviceDiscoverySub?.cancel();
@@ -194,7 +207,8 @@ class MidiService {
         _refreshBleDeviceList();
       });
 
-      await Future.delayed(const Duration(seconds: 5));
+      // BLE 扫描需要更长时间，扩展到 8 秒
+      await Future.delayed(const Duration(seconds: 8));
       _midiCommand.stopScanningForBluetoothDevices();
       await _refreshBleDeviceList();
     } catch (e) {
