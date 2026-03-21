@@ -5,6 +5,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/repositories/score_repository.dart';
 import '../../midi/services/midi_service.dart';
 import '../../score/models/score.dart';
+import '../../score/services/musicxml_parser.dart';
 import '../../score/widgets/score_renderer.dart';
 import '../models/note_event.dart';
 import '../services/score_follower.dart';
@@ -41,6 +42,9 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   String? _connectedDeviceName;
   MidiConnectionType? _connectionType;
 
+  // 从 MusicXML 解析的 Score (用于 ScoreFollower)
+  Score? _parsedScore;
+
   // OSMD 渲染
   String? _xmlContent;
   bool _isLoadingXml = true;
@@ -71,8 +75,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
           _connectionType = _midiService.connectionType;
           if (state == MidiConnectionState.connected) {
             _state = PracticeState.ready;
+            _startReadyListener();
           } else if (state == MidiConnectionState.disconnected) {
             if (_state == PracticeState.ready) _state = PracticeState.idle;
+            _readyMidiSub?.cancel();
           }
         });
       }
@@ -82,7 +88,23 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       _state = PracticeState.ready;
       _connectedDeviceName = _midiService.connectedDevice?.name;
       _connectionType = _midiService.connectionType;
+      _startReadyListener();
     }
+  }
+
+  /// Ready 状态下监听 MIDI 按键，自动开始练习
+  StreamSubscription<MidiEvent>? _readyMidiSub;
+
+  void _startReadyListener() {
+    _readyMidiSub?.cancel();
+    _readyMidiSub = _midiService.midiStream.listen((event) {
+      if (_state == PracticeState.ready &&
+          event.type == MidiEventType.noteOn &&
+          event.velocity > 0) {
+        _readyMidiSub?.cancel();
+        _startPractice();
+      }
+    });
   }
 
   Future<void> _loadScoreXml() async {
@@ -92,8 +114,11 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     });
     try {
       final xml = await _scoreRepo.getScoreXml(widget.scoreId);
+      // 同时解析为 Score 对象
+      final score = MusicXmlParser.parseString(xml, scoreId: widget.scoreId);
       if (mounted) setState(() {
         _xmlContent = xml;
+        _parsedScore = score;
         _isLoadingXml = false;
       });
     } catch (e) {
@@ -105,9 +130,10 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   }
 
   void _startPractice() {
-    if (widget.score == null) {
+    final score = _parsedScore ?? widget.score;
+    if (score == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('乐谱数据未加载')),
+        const SnackBar(content: Text('乐谱数据未加载，请稍候...')),
       );
       return;
     }
@@ -119,7 +145,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       _highlightMeasure = 1;
     });
 
-    _follower = ScoreFollower(widget.score!);
+    _follower = ScoreFollower(score);
     if (_loopEnabled) {
       _follower!.setLoopRange(_loopStartMeasure, _loopEndMeasure);
     }
@@ -141,6 +167,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       }
     });
 
+    _midiSub?.cancel();
     _midiSub = _midiService.midiStream.listen(_onMidiEvent);
     setState(() {});
   }
@@ -266,6 +293,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     _midiSub?.cancel();
     _progressSub?.cancel();
     _connectionSub?.cancel();
+    _readyMidiSub?.cancel();
     _follower?.dispose();
     super.dispose();
   }
