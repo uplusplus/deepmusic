@@ -114,6 +114,9 @@ class MidiService {
   final List<MidiDevice> _discoveredBleDevices = [];
   final List<MidiDevice> _discoveredUsbDevices = [];
 
+  // 保存 flutter_midi_command 原始设备引用（扫描停止后可能丢失，需要缓存）
+  final Map<String, dynamic> _rawBleDeviceMap = {};
+
   // ── USB 底层 ──
   UsbPort? _usbPort;
   StreamSubscription<Uint8List>? _usbDataSub;
@@ -155,6 +158,9 @@ class MidiService {
   Future<List<MidiDevice>> scanAllDevices() async {
     debugPrint('[MidiService] Scanning all devices...');
     _updateState(MidiConnectionState.scanning);
+
+    // 先停止之前的扫描（如果有）
+    try { _midiCommand.stopScanningForBluetoothDevices(); } catch (_) {}
 
     // 先请求蓝牙权限
     final hasPermission = await BlePermissions.requestBlePermissions();
@@ -215,7 +221,8 @@ class MidiService {
       // stopScanningForBluetoothDevices() 会调用 discoveredDevices.clear()
       await _refreshBleDeviceList();
 
-      _midiCommand.stopScanningForBluetoothDevices();
+      // 不停止扫描 —— stopScanning 会清空设备列表，导致后续连接找不到设备
+      // 扫描会在连接时由 _connectBleDevice 停止，或由 disconnect/dispose 停止
     } catch (e) {
       debugPrint('[MidiService] BLE scan failed: $e');
     }
@@ -227,6 +234,7 @@ class MidiService {
       final devices = await _midiCommand.devices;
       if (devices != null) {
         _discoveredBleDevices.clear();
+        _rawBleDeviceMap.clear();
         for (final device in devices) {
           // 跳过虚拟/系统 MIDI 设备
           final name = device.name ?? '';
@@ -250,8 +258,13 @@ class MidiService {
           }
 
           final displayName = name.isNotEmpty ? name : 'Unknown BLE Device';
+          final deviceId = 'ble_${device.id}';
+
+          // 缓存原始设备引用，供连接时使用（stopScanning 后 devices 列表可能清空）
+          _rawBleDeviceMap[deviceId] = device;
+
           _discoveredBleDevices.add(MidiDevice(
-            id: 'ble_${device.id}',
+            id: deviceId,
             name: displayName,
             manufacturer: _extractManufacturer(name),
             isConnected: device.connected ?? false,
@@ -487,10 +500,17 @@ class MidiService {
 
   // ──────── 连接 ────────
 
+  /// 连接设备，失败时返回具体错误信息
+  /// 成功返回 null，失败返回错误消息
+  String? _lastConnectError;
+
+  String? get lastConnectError => _lastConnectError;
+
   Future<bool> connect(MidiDevice device) async {
     debugPrint('[MidiService] Connecting to ${device.name} (id=${device.id}, type=${device.connectionType.name})...');
     _updateState(MidiConnectionState.connecting);
-    _reconnectAttempts = 0; // 手动连接，重置重连计数
+    _reconnectAttempts = 0;
+    _lastConnectError = null;
 
     try {
       bool success;
@@ -509,11 +529,13 @@ class MidiService {
         debugPrint('[MidiService] Connected: ${device.name} via ${device.connectionType.name}');
         return true;
       } else {
+        _lastConnectError = '连接失败，请重试';
         _updateState(MidiConnectionState.error);
         return false;
       }
     } catch (e) {
       debugPrint('[MidiService] Connection failed: $e');
+      _lastConnectError = e.toString().replaceFirst('Exception: ', '');
       _updateState(MidiConnectionState.error);
       return false;
     }
@@ -521,40 +543,56 @@ class MidiService {
 
   Future<bool> _connectBleDevice(MidiDevice device) async {
     try {
+      // 1. 确保 BLE Central 已初始化
+      await _midiCommand.startBluetoothCentral();
+      await _midiCommand.waitUntilBluetoothIsInitialized();
+
+      // 2. 获取当前设备列表（扫描仍在运行，设备列表有效）
       final midiDevices = await _midiCommand.devices;
       debugPrint('[MidiService] BLE connect: available devices=${midiDevices?.length ?? 0}');
-      if (midiDevices == null) throw Exception('无法获取设备列表');
 
+      if (midiDevices == null || midiDevices.isEmpty) {
+        throw Exception('设备列表为空，请先扫描设备');
+      }
+
+      // 打印所有可用设备（调试用）
+      for (final d in midiDevices) {
+        debugPrint('[MidiService] BLE connect:   - ${d.name}(${d.id}) connected=${d.connected}');
+      }
+
+      // 3. 查找目标设备
       final rawId = device.id.replaceAll('ble_', '');
-      debugPrint('[MidiService] BLE connect: looking for rawId=$rawId');
-
       dynamic targetDevice;
       for (final d in midiDevices) {
-        debugPrint('[MidiService] BLE connect: device id=${d.id} name=${d.name} connected=${d.connected}');
         if (d.id == rawId) {
-          // 额外安全检查：跳过已知的虚拟 MIDI 设备
           final name = d.name ?? '';
-          if (name == 'MidiManager' || name == '-' || name.isEmpty) {
-            debugPrint('[MidiService] Skipping virtual MIDI device: $name');
-            continue;
-          }
+          if (name == 'MidiManager' || name == '-' || name.isEmpty) continue;
           targetDevice = d;
           break;
         }
       }
+
       if (targetDevice == null) {
-        debugPrint('[MidiService] BLE connect: device $rawId NOT found in ${midiDevices.length} devices');
-        throw Exception('设备未找到或为虚拟设备');
+        throw Exception('设备 "${device.name}" 不在当前列表中，请重新扫描');
       }
 
-      debugPrint('[MidiService] BLE connect: calling connectToDevice for ${targetDevice.name}');
-      await _midiCommand.connectToDevice(targetDevice);
+      // 4. 直接在扫描状态下连接（不要停止扫描！stopScanning 会清空设备列表）
+      debugPrint('[MidiService] BLE connect: connecting to ${targetDevice.name}...');
+      await _midiCommand.connectToDevice(targetDevice).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          throw Exception('连接超时（15s），请确认设备已开启蓝牙配对模式');
+        },
+      );
+
+      // 连接成功后停止扫描
+      _midiCommand.stopScanningForBluetoothDevices();
       debugPrint('[MidiService] BLE connect: connectToDevice succeeded');
       _startBleMidiListening();
       return true;
     } catch (e) {
       debugPrint('[MidiService] BLE connect failed: $e');
-      return false;
+      rethrow;
     }
   }
 
@@ -651,6 +689,9 @@ class MidiService {
     _reconnectTimer?.cancel();
     _reconnectAttempts = 0;
 
+    // 停止 BLE 扫描
+    try { _midiCommand.stopScanningForBluetoothDevices(); } catch (_) {}
+
     // USB 断开
     if (_connectionType == MidiConnectionType.usb) {
       _handleUsbDisconnect();
@@ -701,6 +742,7 @@ class MidiService {
   }
 
   void dispose() {
+    try { _midiCommand.stopScanningForBluetoothDevices(); } catch (_) {}
     _midiDataStreamSub?.cancel();
     _deviceDiscoverySub?.cancel();
     _usbDataSub?.cancel();

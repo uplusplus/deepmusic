@@ -91,9 +91,20 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-21 22:20)
+## 最新更新 (2026-03-22 03:13)
 
-### 📱 蓝牙 MIDI 扫描修复 (v2)
+### 🔧 蓝牙 MIDI 连接修复 (2026-03-22)
+- 修复 `flutter_midi_command` 的 `stopScanningForBluetoothDevices()` 清空设备列表导致连接失败的 bug
+- 核心改动：扫描完成后不主动停止 BLE 扫描，保持设备列表有效直到连接成功/断开/退出
+- `_connectBleDevice` 连接前不再重新扫描，直接从运行中的设备列表获取新鲜设备引用
+- 添加连接超时机制（15s），超时给出明确提示
+- 连接成功后才停止 BLE 扫描，失败则扫描继续运行便于重试
+- `DeviceListPage` 添加防重复点击保护，连接中显示 loading 状态
+- 失败时显示具体错误原因（而非笼统的"连接失败"）
+- Home 页新增 MIDI 测试面板，连接成功后可实时验证音符接收
+- `disconnect()` 和 `dispose()` 确保停止 BLE 扫描
+
+### 📱 蓝牙 MIDI 扫描修复 (v2) (2026-03-21)
 - 修复 `BlePermissions._getAndroidSdkInt()` 永远返回 31 的 bug，改用 Android 原生 MethodChannel (`Build.VERSION.SDK_INT`) 获取真实 SDK 版本
 - Android 12-13 正确请求 `ACCESS_FINE_LOCATION`（BLE 扫描必需，Android 14+ 已移除此要求）
 - BLE 扫描初始化流程优化：先调用 `startBluetoothCentral()` + `waitUntilBluetoothIsInitialized()` 再开始扫描
@@ -186,7 +197,8 @@ deepmusic/
 - [x] ProfilePage — 个人页面 (用户信息/统计/菜单/登出)
 
 ### ⏳ 进行中
-- [ ] 蓝牙 MIDI + USB MIDI 真机调试 (需 Yamaha P125 + Android 设备)
+- [x] 蓝牙 MIDI 连接 (BLE 连接已验证通过，真机测试通过 ✅)
+- [ ] USB MIDI 真机调试
 - [ ] 端到端集成测试
 - [ ] 个人资料编辑 (F7.2)
 
@@ -208,4 +220,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-21 22:20*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 03:13*

@@ -14,8 +14,8 @@ function buildXml({ title, composer, timeSig, keyFifths, tempo, measures }) {
     let notesXml = '';
     for (const note of m) {
       const [step, octave, dur, type] = note;
-      const alter = step.length > 1 ? `\n          <alter>${step.endsWith('#') ? 1 : -1}</alter>` : '';
-      const cleanStep = step.replace(/[#b]/, '');
+      const alter = (step.includes('#') || step.includes('b')) ? `\n          <alter>${step.endsWith('#') ? 1 : -1}</alter>` : '';
+      const cleanStep = step.replace(/[0-9#b]/g, '');
       notesXml += `
       <note>
         <pitch>

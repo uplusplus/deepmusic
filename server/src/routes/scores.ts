@@ -225,7 +225,7 @@ router.get(
       const contentType =
         ext === '.mxl'
           ? 'application/vnd.recordare.musicxml'
-          : 'application/xml';
+          : 'application/xml; charset=utf-8';
 
       res.setHeader('Content-Type', contentType);
       res.setHeader(

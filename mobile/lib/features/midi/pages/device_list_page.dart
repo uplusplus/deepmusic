@@ -47,16 +47,26 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
     }
   }
 
+  bool _isConnecting = false;
+
   Future<void> _connectToDevice(MidiDevice device) async {
-    final success = await _midiService.connect(device);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? '已连接 ${device.name}' : '连接失败'),
-          backgroundColor: success ? AppColors.success : AppColors.error,
-        ),
-      );
-      if (success) Navigator.pop(context);
+    if (_isConnecting) return;
+    setState(() => _isConnecting = true);
+    try {
+      final success = await _midiService.connect(device);
+      if (mounted) {
+        final errorMsg = _midiService.lastConnectError;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? '已连接 ${device.name}' : (errorMsg ?? '连接失败')),
+            backgroundColor: success ? AppColors.success : AppColors.error,
+            duration: Duration(seconds: success ? 2 : 4),
+          ),
+        );
+        if (success) Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) setState(() => _isConnecting = false);
     }
   }
 
@@ -219,8 +229,14 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
         ),
         trailing: isConnected
             ? const Icon(Icons.check_circle, color: AppColors.success)
-            : ElevatedButton(
-                onPressed: () => _connectToDevice(device),
+            : _isConnecting
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : ElevatedButton(
+                    onPressed: () => _connectToDevice(device),
                 style: ElevatedButton.styleFrom(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
