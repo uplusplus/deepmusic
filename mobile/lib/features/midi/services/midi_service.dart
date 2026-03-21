@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
 // ignore: depend_on_referenced_packages
 import 'package:usb_serial/usb_serial.dart';
+import 'ble_permissions.dart';
 
 /// MIDI 连接类型
 enum MidiConnectionType { bluetooth, usb }
@@ -155,8 +156,14 @@ class MidiService {
     debugPrint('[MidiService] Scanning all devices...');
     _updateState(MidiConnectionState.scanning);
 
+    // 先请求蓝牙权限
+    final hasPermission = await BlePermissions.requestBlePermissions();
+    if (!hasPermission) {
+      debugPrint('[MidiService] BLE permissions denied, scanning USB only');
+    }
+
     await Future.wait([
-      _scanBleDevices(),
+      if (hasPermission) _scanBleDevices(),
       _scanUsbDevices(),
     ]);
 
@@ -187,7 +194,7 @@ class MidiService {
         _refreshBleDeviceList();
       });
 
-      await Future.delayed(const Duration(seconds: 3));
+      await Future.delayed(const Duration(seconds: 5));
       _midiCommand.stopScanningForBluetoothDevices();
       await _refreshBleDeviceList();
     } catch (e) {
@@ -202,14 +209,28 @@ class MidiService {
       if (devices != null) {
         _discoveredBleDevices.clear();
         for (final device in devices) {
-          // 只保留 BLE 类型设备，过滤掉 native/virtual MIDI 设备
-          final deviceType = (device as dynamic).type as String?;
-          if (deviceType != null && deviceType != 'BLE') {
-            debugPrint('[MidiService] Skipping non-BLE device: ${device.name} (type=$deviceType)');
+          // 跳过虚拟/系统 MIDI 设备
+          final name = device.name ?? '';
+          if (name == 'MidiManager' || name == '-' || name.isEmpty) {
+            debugPrint('[MidiService] Skipping virtual MIDI device: $name');
             continue;
           }
-          // 跳过没有名称的设备
-          if (device.name == null || device.name!.isEmpty) continue;
+
+          // 尝试获取设备类型，不强制要求为 BLE
+          // flutter_midi_command 的设备类型字段在不同平台上行为不同
+          String? deviceType;
+          try {
+            deviceType = (device as dynamic).type as String?;
+          } catch (_) {
+            // type 字段不存在时，按名称判断是否为虚拟设备即可
+            deviceType = null;
+          }
+
+          // 只跳过明确为 native/virtual 类型的设备
+          if (deviceType == 'native' || deviceType == 'virtual') {
+            debugPrint('[MidiService] Skipping $deviceType device: $name');
+            continue;
+          }
 
           _discoveredBleDevices.add(MidiDevice(
             id: 'ble_${device.id}',
@@ -218,6 +239,7 @@ class MidiService {
             isConnected: device.connected ?? false,
             connectionType: MidiConnectionType.bluetooth,
           ));
+          debugPrint('[MidiService] Found BLE device: $name (type=$deviceType)');
         }
       }
     } catch (e) {

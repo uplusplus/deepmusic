@@ -41,6 +41,7 @@ dependencies:
   intl: ^0.18.1
   path_provider: ^2.1.1
   path: ^1.8.3
+  permission_handler: ^11.3.1
 
   # 日志
   logger: ^2.0.2+1
