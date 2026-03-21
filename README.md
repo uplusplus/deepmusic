@@ -91,6 +91,24 @@ deepmusic/
 
 ---
 
+## 最新更新 (2026-03-21)
+
+### 🎵 乐谱库完善
+- 完成 30 首乐谱 MusicXML 文件生成（含真实旋律音符数据）
+- 覆盖古典、影视、民歌、流行、爵士等分类
+- 10 首初级 / 13 首中级 / 7 首高级
+
+### 🔧 OSMD 渲染修复
+- 将 OpenSheetMusicDisplay 库内联到 HTML（1.2MB），解决国内 CDN 加载失败问题
+- 乐谱渲染器不再依赖外部网络，支持离线渲染
+
+### 🗄️ 本地开发优化
+- SQLite 数据库支持，无需 PostgreSQL 即可本地开发
+- 乐谱生成脚本 `server/src/scripts/generate-scores.ts`
+- 服务端 26 个 API 端点全部正常运行
+
+---
+
 ## 开发进度
 
 ### ✅ 已完成
@@ -113,7 +131,7 @@ deepmusic/
 - [x] 收藏/取消收藏 (User-Score 多对多)
 - [x] 练习会话持久化 (Prisma PracticeSession, 事务化操作, 替代内存 Map)
 - [x] Prisma 数据模型 (Score/User/PracticeRecord/PracticeSession/Tag/Device) + 迁移
-- [x] 19 首乐谱种子数据导入
+- [x] 30 首乐谱种子数据导入 + MusicXML 文件生成
 
 **移动端核心模块**
 - [x] Flutter 项目结构 + feature-based 组织
@@ -165,4 +183,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-20 20:47*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-21 20:21*
