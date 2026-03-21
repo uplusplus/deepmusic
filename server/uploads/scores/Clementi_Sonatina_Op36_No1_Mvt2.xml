@@ -781,7 +781,7 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
@@ -2491,7 +2491,7 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
@@ -3837,13 +3837,13 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
@@ -3903,13 +3903,13 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
@@ -4419,7 +4419,7 @@
     <measure number="13" width="251.46">
       <note>
         <rest/>
-        <duration>36</duration><voice>1</voice><staff>1</staff>
+        <duration>36</duration>
         <voice>1</voice>
         </note>
       </measure>
@@ -4476,13 +4476,13 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
@@ -4589,7 +4589,7 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
@@ -5234,7 +5234,7 @@
         </note>
       <note>
         <rest/>
-        <duration>12</duration><voice>1</voice><staff>1</staff>
+        <duration>12</duration>
         <voice>1</voice>
         <type>quarter</type>
         </note>
