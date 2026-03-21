@@ -64,10 +64,31 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     super.initState();
     _initMidiConnection();
     _loadScoreXml();
+
+    // 兜底：首帧后再检查一次连接状态（防止 stream 竞争导致同步检查遗漏）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_midiService.currentState == MidiConnectionState.connected &&
+          _connectionState != MidiConnectionState.connected) {
+        debugPrint('[PracticePage] Post-frame fix: sync connected state');
+        setState(() {
+          _connectionState = MidiConnectionState.connected;
+          _connectedDeviceName = _midiService.connectedDevice?.name;
+          _connectionType = _midiService.connectionType;
+          if (_state == PracticeState.idle) {
+            _state = PracticeState.ready;
+            _startReadyListener();
+          }
+        });
+      }
+    });
   }
 
   void _initMidiConnection() {
+    debugPrint('[PracticePage] initState: MidiService.currentState=${_midiService.currentState}, device=${_midiService.connectedDevice?.name}');
+
     _connectionSub = _midiService.connectionState.listen((state) {
+      debugPrint('[PracticePage] stream event: $state, device=${_midiService.connectedDevice?.name}');
       if (mounted) {
         setState(() {
           _connectionState = state;
@@ -85,10 +106,14 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     });
 
     if (_midiService.currentState == MidiConnectionState.connected) {
+      debugPrint('[PracticePage] sync check: connected, setting ready');
       _state = PracticeState.ready;
+      _connectionState = MidiConnectionState.connected;  // ← 修复：必须同步设置
       _connectedDeviceName = _midiService.connectedDevice?.name;
       _connectionType = _midiService.connectionType;
       _startReadyListener();
+    } else {
+      debugPrint('[PracticePage] sync check: not connected (${_midiService.currentState})');
     }
   }
 
