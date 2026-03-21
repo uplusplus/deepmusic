@@ -234,8 +234,18 @@
       }
     }
 
+    function handleMessageB64(b64) {
+      try {
+        var json = atob(b64);
+        handleMessage(json);
+      } catch (e) {
+        console.error('[OSMD] handleMessageB64 error:', e);
+      }
+    }
+
     window.osmdBridge = {
       handleMessage: handleMessage,
+      handleMessageB64: handleMessageB64,
       getPositions: getMeasurePositions,
     };
 

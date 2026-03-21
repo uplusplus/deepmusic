@@ -167,7 +167,8 @@ class _ScoreRendererState extends State<ScoreRenderer> {
 
   void _sendMessage(Map<String, dynamic> message) {
     final json = jsonEncode(message);
-    _controller.runJavaScript("window.osmdBridge.handleMessage('$json');");
+    final b64 = base64Encode(utf8.encode(json));
+    _controller.runJavaScript("window.osmdBridge.handleMessageB64('$b64');");
   }
 
   void _renderScore() {

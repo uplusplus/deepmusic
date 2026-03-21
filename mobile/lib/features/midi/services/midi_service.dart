@@ -230,18 +230,16 @@ class MidiService {
         for (final device in devices) {
           // 跳过虚拟/系统 MIDI 设备
           final name = device.name ?? '';
-          if (name == 'MidiManager' || name == '-' || name.isEmpty) {
+          if (name == 'MidiManager' || name == '-') {
             debugPrint('[MidiService] Skipping virtual MIDI device: $name');
             continue;
           }
 
-          // 尝试获取设备类型，不强制要求为 BLE
-          // flutter_midi_command 的设备类型字段在不同平台上行为不同
+          // 尝试获取设备类型
           String? deviceType;
           try {
             deviceType = (device as dynamic).type as String?;
           } catch (_) {
-            // type 字段不存在时，按名称判断是否为虚拟设备即可
             deviceType = null;
           }
 
@@ -251,14 +249,15 @@ class MidiService {
             continue;
           }
 
+          final displayName = name.isNotEmpty ? name : 'Unknown BLE Device';
           _discoveredBleDevices.add(MidiDevice(
             id: 'ble_${device.id}',
-            name: device.name ?? 'Unknown BLE MIDI',
-            manufacturer: _extractManufacturer(device.name),
+            name: displayName,
+            manufacturer: _extractManufacturer(name),
             isConnected: device.connected ?? false,
             connectionType: MidiConnectionType.bluetooth,
           ));
-          debugPrint('[MidiService] Found BLE device: $name (type=$deviceType)');
+          debugPrint('[MidiService] Found BLE device: $displayName (type=$deviceType)');
         }
       }
     } catch (e) {
