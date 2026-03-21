@@ -488,7 +488,7 @@ class MidiService {
   // ──────── 连接 ────────
 
   Future<bool> connect(MidiDevice device) async {
-    debugPrint('[MidiService] Connecting to ${device.name} (${device.connectionType.name})...');
+    debugPrint('[MidiService] Connecting to ${device.name} (id=${device.id}, type=${device.connectionType.name})...');
     _updateState(MidiConnectionState.connecting);
     _reconnectAttempts = 0; // 手动连接，重置重连计数
 
@@ -501,6 +501,7 @@ class MidiService {
         success = await _connectBleDevice(device);
       }
 
+      debugPrint('[MidiService] connect result: $success');
       if (success) {
         _connectedDevice = device.copyWith(isConnected: true);
         _connectionType = device.connectionType;
@@ -521,11 +522,15 @@ class MidiService {
   Future<bool> _connectBleDevice(MidiDevice device) async {
     try {
       final midiDevices = await _midiCommand.devices;
+      debugPrint('[MidiService] BLE connect: available devices=${midiDevices?.length ?? 0}');
       if (midiDevices == null) throw Exception('无法获取设备列表');
 
       final rawId = device.id.replaceAll('ble_', '');
+      debugPrint('[MidiService] BLE connect: looking for rawId=$rawId');
+
       dynamic targetDevice;
       for (final d in midiDevices) {
+        debugPrint('[MidiService] BLE connect: device id=${d.id} name=${d.name} connected=${d.connected}');
         if (d.id == rawId) {
           // 额外安全检查：跳过已知的虚拟 MIDI 设备
           final name = d.name ?? '';
@@ -537,9 +542,14 @@ class MidiService {
           break;
         }
       }
-      if (targetDevice == null) throw Exception('设备未找到或为虚拟设备');
+      if (targetDevice == null) {
+        debugPrint('[MidiService] BLE connect: device $rawId NOT found in ${midiDevices.length} devices');
+        throw Exception('设备未找到或为虚拟设备');
+      }
 
+      debugPrint('[MidiService] BLE connect: calling connectToDevice for ${targetDevice.name}');
       await _midiCommand.connectToDevice(targetDevice);
+      debugPrint('[MidiService] BLE connect: connectToDevice succeeded');
       _startBleMidiListening();
       return true;
     } catch (e) {
