@@ -17,16 +17,12 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
   bool _isScanning = false;
   StreamSubscription? _devicesSub;
   StreamSubscription? _stateSub;
-  MidiConnectionState _connectionState = MidiConnectionState.disconnected;
 
   @override
   void initState() {
     super.initState();
     _listenToDevices();
-    // 已连接时不自动扫描，直接用缓存；未连接时才扫描
-    if (_midiService.currentState != MidiConnectionState.connected) {
-      _startScan();
-    }
+    _startScan();
   }
 
   void _listenToDevices() {
@@ -35,7 +31,7 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
     });
 
     _stateSub = _midiService.connectionState.listen((state) {
-      if (mounted) setState(() => _connectionState = state);
+      if (mounted) setState(() {});
     });
 
     // 如果已有缓存设备，立即显示
@@ -88,10 +84,17 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final usbDevices = _devices
+    final connectedDevice = _midiService.connectedDevice;
+    final connectedId = connectedDevice?.id;
+
+    // 未连接的设备列表（排除已连接的）
+    final unconnectedDevices = _devices
+        .where((d) => d.id != connectedId)
+        .toList();
+    final usbDevices = unconnectedDevices
         .where((d) => d.connectionType == MidiConnectionType.usb)
         .toList();
-    final bleDevices = _devices
+    final bleDevices = unconnectedDevices
         .where((d) => d.connectionType == MidiConnectionType.bluetooth)
         .toList();
 
@@ -113,83 +116,78 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
       ),
       body: Column(
         children: [
-          // 连接状态
-          _buildConnectionStatus(),
           Expanded(
-            child: _devices.isEmpty && !_isScanning
-                ? _buildEmptyState()
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      if (usbDevices.isNotEmpty) ...[
-                        _buildSectionHeader('USB 连接', Icons.usb),
-                        ...usbDevices.map(_buildDeviceTile),
-                        const SizedBox(height: 16),
-                      ],
-                      if (bleDevices.isNotEmpty) ...[
-                        _buildSectionHeader('蓝牙连接', Icons.bluetooth),
-                        ...bleDevices.map(_buildDeviceTile),
-                      ],
-                      if (_isScanning && _devices.isEmpty)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(32),
-                            child: CircularProgressIndicator(),
-                          ),
-                        ),
-                    ],
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // ── 已连接设备（置顶）──
+                if (connectedDevice != null) ...[
+                  _buildSectionHeader('已连接', Icons.check_circle),
+                  _buildConnectedTile(connectedDevice),
+                  const SizedBox(height: 16),
+                ],
+
+                // ── 扫描中 ──
+                if (_isScanning && _devices.isEmpty)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(),
+                    ),
                   ),
+
+                // ── 未连接设备 ──
+                if (usbDevices.isNotEmpty) ...[
+                  _buildSectionHeader('USB 设备', Icons.usb),
+                  ...usbDevices.map(_buildDeviceTile),
+                  const SizedBox(height: 16),
+                ],
+                if (bleDevices.isNotEmpty) ...[
+                  _buildSectionHeader('蓝牙设备', Icons.bluetooth),
+                  ...bleDevices.map(_buildDeviceTile),
+                ],
+
+                // ── 空状态 ──
+                if (!_isScanning && unconnectedDevices.isEmpty && connectedDevice == null)
+                  _buildEmptyState(),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildConnectionStatus() {
-    Color color;
-    String text;
-    IconData icon;
-
-    switch (_connectionState) {
-      case MidiConnectionState.connected:
-        color = AppColors.success;
-        final device = _midiService.connectedDevice;
-        final typeLabel =
-            device?.connectionType == MidiConnectionType.usb ? 'USB' : 'BLE';
-        text = '已连接 ($typeLabel): ${device?.name ?? "未知"}';
-        icon = Icons.check_circle;
-        break;
-      case MidiConnectionState.connecting:
-        color = AppColors.warning;
-        text = '连接中...';
-        icon = Icons.hourglass_empty;
-        break;
-      case MidiConnectionState.error:
-        color = AppColors.error;
-        text = '连接错误';
-        icon = Icons.error;
-        break;
-      default:
-        color = Colors.grey;
-        text = '未连接';
-        icon = Icons.circle_outlined;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      color: color.withOpacity(0.08),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-              child: Text(text, style: TextStyle(color: color, fontSize: 13))),
-          if (_connectionState == MidiConnectionState.connected)
-            TextButton(
-              onPressed: _midiService.disconnect,
-              child: const Text('断开'),
-            ),
-        ],
+  /// 已连接设备的卡片（带断开按钮）
+  Widget _buildConnectedTile(MidiDevice device) {
+    final isUsb = device.connectionType == MidiConnectionType.usb;
+    return Card(
+      color: AppColors.success.withOpacity(0.05),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: AppColors.success.withOpacity(0.1),
+          child: Icon(
+            isUsb ? Icons.usb : Icons.bluetooth_connected,
+            color: AppColors.success,
+          ),
+        ),
+        title: Text(device.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          '${device.manufacturer ?? ''} · ${isUsb ? 'USB OTG' : '蓝牙 BLE'} · 已连接'
+              .replaceAll(' ·  · ', ' · '),
+          style: const TextStyle(fontSize: 12),
+        ),
+        trailing: OutlinedButton(
+          onPressed: _midiService.disconnect,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.error,
+            side: BorderSide(color: AppColors.error.withOpacity(0.5)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            textStyle: const TextStyle(fontSize: 13),
+          ),
+          child: const Text('断开'),
+        ),
       ),
     );
   }
