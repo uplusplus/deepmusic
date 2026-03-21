@@ -92,15 +92,21 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-22 04:55)
+## 最新更新 (2026-03-22 05:48)
 
-### 📋 MIDI 自动连接 (规划中)
-- 记录用户连接过的 MIDI 设备（名称 + 类型 + 信号强度）
-- App 启动时自动扫描，发现已知设备自动连接
-- 多个已知设备时，优先连接信号最强的一个
-- 用户可随时手动断开连接
+### ✅ MIDI 自动连接 (2026-03-22)
+- 记录已连接设备到 SharedPreferences（名称 + 类型 + 连接时间，最多 10 个）
+- App 启动（SplashPage）后台自动扫描，发现已知设备自动连接
+- 多个已知设备按最近连接时间排序，优先连接最新的
+- 设备列表页：已连接设备置顶显示「断开」按钮，未连接设备显示「连接」按钮
+- 进入设备列表自动扫描，30 秒内复用缓存结果（刷新按钮强制重新扫描）
+- 已连接时不重复扫描，直接显示状态
 
-### 🔧 修复钢琴键盘崩溃 (2026-03-22)
+### 🔧 修复练习页面崩溃 (2026-03-22)
+- 钢琴键盘黑键负 margin 崩溃 → 改用 Transform.translate
+- 练习页面按琴键无法开始 → MusicXML 解析 Score + Ready 状态 MIDI 监听
+
+### ▶️ 乐谱播放功能 (2026-03-22)
 - 黑键 `Container` 使用负 margin (`-9px`) 导致断言失败崩溃
 - 改用 `Transform.translate(offset: Offset(-9, 0))` 实现叠放
 
@@ -202,7 +208,7 @@ deepmusic/
 - [x] OSMD 乐谱渲染器 (WebView + JS Bridge 双向通信)
 - [x] ScoreFollower 乐谱跟随引擎 (和弦组匹配/容错跳过/自动翻页/手动翻页/区间循环)
 - [x] NoteEvaluator 音符评估器 (音准+节奏双维度评分)
-- [x] MidiService MIDI 服务 (BLE + USB 双连接, USB OTG 底层, BLE 断线自动重连)
+- [x] MidiService MIDI 服务 (BLE + USB 双连接, USB OTG 底层, BLE 断线自动重连, 已知设备启动自动连接)
 - [x] API Client (Dio + Token 管理)
 - [x] Auth Repository (register/login/logout/token 持久化)
 - [x] Score Repository (列表/搜索/详情/下载/收藏)
@@ -227,7 +233,7 @@ deepmusic/
 - [ ] 个人资料编辑 (F7.2)
 
 ### 📋 待开发
-- [ ] MIDI 自动连接 — 启动时自动扫描并连接已知设备（信号最强优先），用户可断开
+- [x] MIDI 自动连接 — 启动时自动扫描并连接已知设备（最近连接优先），设备列表已连接置顶+断开按钮
 - [ ] 离线乐谱缓存 (Hive 本地存储)
 - [x] 横屏/竖屏适配 (Practice/ScoreView/ScoreLibrary/Home 自适应布局)
 - [ ] 暗色模式
@@ -245,4 +251,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 04:55*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 05:48*
