@@ -1,7 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import '../models/score.dart';
+import '../../features/score/models/score.dart';
 import '../../core/constants/app_colors.dart';
-import 'api_client.dart';
+import '../services/api_client.dart';
 
 class ScoreRepository {
   final ApiClient _apiClient;

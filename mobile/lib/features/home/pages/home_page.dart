@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../midi/services/midi_service.dart';
 import '../../midi/providers/midi_provider.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/constants/app_colors.dart';
@@ -10,8 +11,8 @@ class HomePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connectionInfo = ref.watch(midiConnectionInfoProvider);
-    final connectionState = connectionInfo.state;
-    final deviceName = connectionInfo.deviceName;
+    final MidiConnectionState connectionState = connectionInfo.state;
+    final String? deviceName = connectionInfo.deviceName;
 
     return Scaffold(
       body: SafeArea(

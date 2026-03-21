@@ -13,7 +13,7 @@ class ApiClient {
       BaseOptions(
         baseUrl: const String.fromEnvironment(
           'API_BASE_URL',
-          defaultValue: 'http://localhost:3000/api',
+          defaultValue: 'http://192.168.3.18:3000/api',
         ),
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 30),

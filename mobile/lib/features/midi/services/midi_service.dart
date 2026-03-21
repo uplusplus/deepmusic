@@ -188,7 +188,7 @@ class MidiService {
       });
 
       await Future.delayed(const Duration(seconds: 3));
-      await _midiCommand.stopScanningForBluetoothDevices();
+      _midiCommand.stopScanningForBluetoothDevices();
       await _refreshBleDeviceList();
     } catch (e) {
       debugPrint('[MidiService] BLE scan failed: $e');
@@ -202,6 +202,15 @@ class MidiService {
       if (devices != null) {
         _discoveredBleDevices.clear();
         for (final device in devices) {
+          // 只保留 BLE 类型设备，过滤掉 native/virtual MIDI 设备
+          final deviceType = (device as dynamic).type as String?;
+          if (deviceType != null && deviceType != 'BLE') {
+            debugPrint('[MidiService] Skipping non-BLE device: ${device.name} (type=$deviceType)');
+            continue;
+          }
+          // 跳过没有名称的设备
+          if (device.name == null || device.name!.isEmpty) continue;
+
           _discoveredBleDevices.add(MidiDevice(
             id: 'ble_${device.id}',
             name: device.name ?? 'Unknown BLE MIDI',
@@ -256,9 +265,10 @@ class MidiService {
       '09e8': 'AKAI',
       '1235': 'Novation',
     };
-    final vendorHex = vid.toRadixString(16).padLeft(4, '0');
+    final vendorHex = vid?.toRadixString(16).padLeft(4, '0') ?? '0000';
     final vendor = knownNames[vendorHex] ?? 'Unknown';
-    return '$vendor USB MIDI (VID:$vendorHex PID:${pid.toRadixString(16).padLeft(4, '0')})';
+    final pidHex = pid?.toRadixString(16).padLeft(4, '0') ?? '0000';
+    return '$vendor USB MIDI (VID:$vendorHex PID:$pidHex)';
   }
 
   bool _isUsbMidiDevice(UsbDevice device, String name) {
@@ -268,7 +278,7 @@ class MidiService {
     if (knownVids.contains(device.vid)) return true;
 
     // 设备类判断 (如果接口信息可用)
-    if (device.interfaceCount > 0) return true; // 有接口的 USB 设备都尝试连接
+    if (device.interfaceCount != null && device.interfaceCount! > 0) return true; // 有接口的 USB 设备都尝试连接
 
     return false;
   }
@@ -476,9 +486,18 @@ class MidiService {
       final rawId = device.id.replaceAll('ble_', '');
       dynamic targetDevice;
       for (final d in midiDevices) {
-        if (d.id == rawId) { targetDevice = d; break; }
+        if (d.id == rawId) {
+          // 额外安全检查：跳过已知的虚拟 MIDI 设备
+          final name = d.name ?? '';
+          if (name == 'MidiManager' || name == '-' || name.isEmpty) {
+            debugPrint('[MidiService] Skipping virtual MIDI device: $name');
+            continue;
+          }
+          targetDevice = d;
+          break;
+        }
       }
-      if (targetDevice == null) throw Exception('设备未找到');
+      if (targetDevice == null) throw Exception('设备未找到或为虚拟设备');
 
       await _midiCommand.connectToDevice(targetDevice);
       _startBleMidiListening();
@@ -595,7 +614,7 @@ class MidiService {
           final rawId = _connectedDevice!.id.replaceAll('ble_', '');
           for (final d in midiDevices) {
             if (d.id == rawId) {
-              await _midiCommand.disconnectDevice(d);
+              _midiCommand.disconnectDevice(d);
               break;
             }
           }
@@ -617,6 +636,18 @@ class MidiService {
 
   void sendTestEvent(MidiEvent event) {
     _midiEventController.add(event);
+  }
+
+  void sendNoteOn(int note, int velocity) {
+    // 发送 MIDI Note On 事件 (用于自动播放)
+    // 注意: 这里只是模拟发送，实际需要通过 USB/BLE 发送 MIDI 数据
+    // 由于 flutter_midi_command 没有直接发送 MIDI 的 API，这里仅记录日志
+    debugPrint('[MidiService] sendNoteOn: note=$note, velocity=$velocity');
+  }
+
+  void sendNoteOff(int note) {
+    // 发送 MIDI Note Off 事件 (用于自动播放)
+    debugPrint('[MidiService] sendNoteOff: note=$note');
   }
 
   void dispose() {

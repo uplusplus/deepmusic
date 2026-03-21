@@ -33,6 +33,8 @@ class ScoreRenderer extends StatefulWidget {
     required this.musicXml,
     this.highlightMeasure,
     this.zoom = 1.0,
+    this.loopStartMeasure,
+    this.loopEndMeasure,
     this.onRendered,
     this.onError,
   });

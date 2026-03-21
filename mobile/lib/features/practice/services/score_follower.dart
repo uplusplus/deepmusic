@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
-import '../models/score.dart';
+import '../../score/models/score.dart';
 import '../models/note_event.dart';
 
 /// 乐谱页面布局信息

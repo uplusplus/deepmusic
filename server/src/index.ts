@@ -17,7 +17,7 @@ import userRoutes from './routes/user.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Middleware
 app.use(helmet());
@@ -61,10 +61,10 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
-  logger.info(`🚀 DeepMusic Server running on port ${PORT}`);
-  logger.info(`📍 Health check: http://localhost:${PORT}/health`);
-  logger.info(`🎵 API base URL: http://localhost:${PORT}/api`);
+app.listen(PORT, '0.0.0.0', () => {
+  logger.info(`🚀 DeepMusic Server running on 0.0.0.0:${PORT}`);
+  logger.info(`📍 Health check: http://0.0.0.0:${PORT}/health`);
+  logger.info(`🎵 API base URL: http://0.0.0.0:${PORT}/api`);
 });
 
 export default app;
