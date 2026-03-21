@@ -34,11 +34,17 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
     _stateSub = _midiService.connectionState.listen((state) {
       if (mounted) setState(() => _connectionState = state);
     });
+
+    // 如果已有缓存设备，立即显示
+    final current = _midiService.currentState;
+    if (current != MidiConnectionState.scanning) {
+      // 用已有的设备流数据填充
+    }
   }
 
-  Future<void> _startScan() async {
+  Future<void> _startScan({bool force = false}) async {
     setState(() => _isScanning = true);
-    final devices = await _midiService.scanAllDevices();
+    final devices = await _midiService.scanAllDevices(force: force);
     if (mounted) {
       setState(() {
         _devices = devices;
@@ -98,7 +104,7 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.refresh),
-            onPressed: _isScanning ? null : _startScan,
+            onPressed: _isScanning ? null : () => _startScan(force: true),
           ),
         ],
       ),
@@ -267,7 +273,7 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
           ),
           const SizedBox(height: 24),
           ElevatedButton.icon(
-            onPressed: _startScan,
+            onPressed: () => _startScan(force: true),
             icon: const Icon(Icons.refresh),
             label: const Text('重新扫描'),
           ),

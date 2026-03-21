@@ -116,6 +116,10 @@ class MidiService {
   final List<MidiDevice> _discoveredBleDevices = [];
   final List<MidiDevice> _discoveredUsbDevices = [];
 
+  // 缓存上次扫描结果（30秒内复用）
+  DateTime? _lastScanTime;
+  static const Duration _scanCacheTimeout = Duration(seconds: 30);
+
   // 保存 flutter_midi_command 原始设备引用（扫描停止后可能丢失，需要缓存）
   final Map<String, dynamic> _rawBleDeviceMap = {};
 
@@ -157,7 +161,29 @@ class MidiService {
   }
 
   /// 扫描所有可用设备 (BLE + USB)，USB 优先
-  Future<List<MidiDevice>> scanAllDevices() async {
+  ///
+  /// 30秒内重复调用会返回缓存结果，避免重复扫描
+  Future<List<MidiDevice>> scanAllDevices({bool force = false}) async {
+    // 如果已在扫描中，等待扫描完成
+    if (_connectionState == MidiConnectionState.scanning) {
+      debugPrint('[MidiService] Scan already in progress, waiting...');
+      await for (final state in _connectionStateController.stream) {
+        if (state != MidiConnectionState.scanning) break;
+      }
+      return List.unmodifiable([..._discoveredUsbDevices, ..._discoveredBleDevices]);
+    }
+
+    // 复用缓存结果
+    if (!force && _lastScanTime != null) {
+      final elapsed = DateTime.now().difference(_lastScanTime!);
+      if (elapsed < _scanCacheTimeout) {
+        debugPrint('[MidiService] Using cached scan results (${elapsed.inSeconds}s ago)');
+        final allDevices = [..._discoveredUsbDevices, ..._discoveredBleDevices];
+        _devicesController.add(List.unmodifiable(allDevices));
+        return allDevices;
+      }
+    }
+
     debugPrint('[MidiService] Scanning all devices...');
     _updateState(MidiConnectionState.scanning);
 
@@ -188,6 +214,7 @@ class MidiService {
       ..._discoveredBleDevices,
     ];
     _devicesController.add(List.unmodifiable(allDevices));
+    _lastScanTime = DateTime.now();
 
     _updateState(
       _connectedDevice != null
