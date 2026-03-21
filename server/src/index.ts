@@ -41,6 +41,7 @@ app.use(httpLogger);
 
 // Static files
 app.use('/uploads', express.static(process.env.UPLOAD_DIR || './uploads'));
+app.use(express.static('public'));
 
 // Health check
 app.get('/health', (req, res) => {
