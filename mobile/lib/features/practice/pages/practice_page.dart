@@ -368,27 +368,37 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   Widget _buildLandscapeLayout() {
     return Column(
       children: [
-        // 上半部分: 乐谱 + 右侧控制
+        // 上: 乐谱 (占满宽度)
         Expanded(
+          child: Column(
+            children: [
+              _buildConnectionBar(),
+              if (_progress != null)
+                LinearProgressIndicator(
+                  value: _progress!.completionPercentage,
+                  backgroundColor: AppColors.divider,
+                  valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+                ),
+              Expanded(child: _buildScoreArea()),
+            ],
+          ),
+        ),
+        // 下: 键盘左 + 当前音符/控制右
+        Container(
+          height: 140,
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.divider)),
+          ),
           child: Row(
             children: [
-              // 左: 乐谱 (占主要宽度)
+              // 键盘 — 占主要宽度
               Expanded(
-                flex: 3,
-                child: Column(
-                  children: [
-                    _buildConnectionBar(),
-                    if (_progress != null)
-                      LinearProgressIndicator(
-                        value: _progress!.completionPercentage,
-                        backgroundColor: AppColors.divider,
-                        valueColor: const AlwaysStoppedAnimation(AppColors.primary),
-                      ),
-                    Expanded(child: _buildScoreArea()),
-                  ],
+                child: PianoKeyboard(
+                  expectedPitches: _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {},
+                  height: 140,
                 ),
               ),
-              // 右: 音符 + 控制
+              // 右侧: 当前音符 + 控制面板
               Container(
                 width: 280,
                 decoration: BoxDecoration(
@@ -397,18 +407,12 @@ class _PracticePageState extends ConsumerState<PracticePage> {
                 child: Column(
                   children: [
                     _buildCurrentNoteBar(),
-                    const Spacer(),
-                    _buildControlPanel(),
+                    Expanded(child: _buildControlPanel()),
                   ],
                 ),
               ),
             ],
           ),
-        ),
-        // 下: 键盘 — 横跨整个底部
-        PianoKeyboard(
-          expectedPitches: _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {},
-          height: 90,
         ),
       ],
     );
