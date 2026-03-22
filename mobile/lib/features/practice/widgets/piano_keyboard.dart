@@ -144,30 +144,42 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final totalWidth = constraints.maxWidth;
+        final availableWidth = constraints.maxWidth;
+        final availableHeight = constraints.maxHeight;
+
+        // 真实钢琴比例：白键宽高比约 1:5.5 (23mm × 150mm)，取 1:6 更美观
+        const maxWhiteKeyWidth = 44.0;
+        final idealWidth = whiteKeys.length * maxWhiteKeyWidth;
+        // 不超过可用宽度，不超过理想宽度
+        final totalWidth = idealWidth.clamp(0.0, availableWidth);
         final actualWhiteKeyWidth = totalWidth / whiteKeys.length;
         final blackKeyWidth = actualWhiteKeyWidth * 0.58;
 
-        return Stack(
-          children: [
-            // 白键层
-            Row(
-              children: whiteKeys.map((key) {
-                return SizedBox(
-                  width: actualWhiteKeyWidth,
-                  height: widget.height - 4,
-                  child: _WhiteKey(
-                    label: key.label!,
-                    isExpected: key.isExpected,
-                    isPressed: key.isPressed,
-                  ),
-                );
-              }).toList(),
-            ),
+        return Center(
+          child: SizedBox(
+            width: totalWidth,
+            child: Stack(
+              children: [
+                // 白键层
+                Row(
+                  children: whiteKeys.map((key) {
+                    return SizedBox(
+                      width: actualWhiteKeyWidth,
+                      height: availableHeight - 4,
+                      child: _WhiteKey(
+                        label: key.label!,
+                        isExpected: key.isExpected,
+                        isPressed: key.isPressed,
+                      ),
+                    );
+                  }).toList(),
+                ),
 
-            // 黑键层
-            ..._buildBlackKeys(blackKeys, whiteKeys, actualWhiteKeyWidth, blackKeyWidth),
-          ],
+                // 黑键层
+                ..._buildBlackKeys(blackKeys, whiteKeys, actualWhiteKeyWidth, blackKeyWidth),
+              ],
+            ),
+          ),
         );
       },
     );
