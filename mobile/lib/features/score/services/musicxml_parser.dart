@@ -442,9 +442,11 @@ class MusicXmlParser {
         divisions;
     final duration = durTicks / divisions;
 
-    // 开始时间 (ms)
+    // 开始时间 (ms) — 使用当前小节的 tempo
     final msPerTick = 60000.0 / (tempo * divisions);
     final startMs = measureStartMs + (tickPos * msPerTick).round();
+    // 实际毫秒时长（已考虑所在小节的 tempo）
+    final durationMs = (durTicks * msPerTick).round();
 
     // 谱表
     int staff = defaultStaff;
@@ -471,6 +473,7 @@ class MusicXmlParser {
       pitch: pitchName,
       pitchNumber: pitchNumber,
       duration: duration,
+      durationMs: durationMs,
       startMs: startMs,
       measureNumber: measureNumber,
       staff: staff,
@@ -494,8 +497,8 @@ class MusicXmlParser {
   static Duration _estimateDuration(List<Note> notes, int tempo) {
     if (notes.isEmpty) return Duration.zero;
     final last = notes.last;
-    final beatMs = 60000 / tempo;
-    final totalMs = last.startMs + (last.duration * beatMs).round();
+    // 使用解析器已计算的 durationMs（已按各小节 tempo 正确计算）
+    final totalMs = last.startMs + last.durationMs;
     return Duration(milliseconds: totalMs);
   }
 

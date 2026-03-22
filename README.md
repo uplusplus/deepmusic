@@ -92,7 +92,41 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-22 19:45)
+## 最新更新 (2026-03-22 23:00)
+
+### 🎵 乐谱列表 + 切换 (2026-03-22)
+- 播放页面新增乐谱列表：竖屏 AppBar 🎵 按钮弹出底部抽屉，横屏右侧侧栏嵌入列表
+- 点击列表项直接切换乐谱，无需返回乐谱库
+- 当前乐谱高亮显示 + play_circle 图标标识
+- `ScoreViewPage` 支持动态 `_currentScoreId`，切换时自动停止播放、重置状态、重新加载 XML
+
+### 🔶 虚拟键盘播放同步高亮 (2026-03-22)
+- AutoPlayer 新增 `noteStream`，每个音符 on/off 发射 `PlayingNoteEvent`
+- PianoKeyboard 新增 `playingNotes` 参数，播放中的音符显示橙色高亮（白键 + 黑键）
+- 优先级：用户按键(蓝) > 播放中(橙) > 应弹(浅蓝) > 普通
+- 使用版本号机制保证 CustomPainter 重绘（避免集合引用不变导致 shouldRepaint 失效）
+
+### 🔧 虚拟键盘触摸修复 (2026-03-22)
+- **问题**：播放页面虚拟键盘点击无响应
+- **根因**：键盘使用 `Expanded` 包裹导致布局挤压异常
+- **修复**：`Expanded` → 固定高度 `SizedBox`，竖屏 200px / 横屏 160px（对齐练习页面）
+
+### 🎵 音符点击 + 循环练习 (2026-03-22)
+- OSMD 乐谱支持点击音符定位播放位置
+- 重复模式：选择任意小节区间，循环播放练习难点段落
+- 播放时当前音符绿色半透明高亮跟随
+- 详见 [wiki/2026-03-22-score-list-and-keyboard.md](wiki/2026-03-22-score-list-and-keyboard.md)
+
+### 🔧 乐谱播放优化：调号/临时记号/力度/移调 (2026-03-22)
+- **调号隐含升降号**：MusicXML 解析器现在根据 `<key><fifths>` 自动为无 `<alter>` 的音符应用调号升降号
+  - 例如 G 大调（fifths=1）中的 F 自动升为 F#，Bb 大调（fifths=-2）中的 B/E 自动降半音
+- **小节内临时记号追踪**：同小节内先出现的 `#`/`b`/`♮` 会沿用给后续同音名的音符，跨小节自动重置
+- **还原记号**：`<alter>0</alter>` 显式取消调号，后续同小节同音名也恢复自然音
+- **`<accidental>` 元素**：无 `<alter>` 时从 `<accidental>sharp/flat/natural` 推导升降号
+- **力度 (Velocity)**：`Note` 模型新增 `velocity` 字段，从 `<velocity>` 或 `dynamics` 属性解析，`AutoPlayer` 使用实际力度替代硬编码 80
+- **MidiService**：新增 `sendControlChange()` 方法支持 MIDI CC（如 CC123 All Notes Off）
+- **单元测试**：30 例全部通过，覆盖音高映射、时值计算、调号处理、力度解析、和弦同步、边界条件
+- 详见 [wiki/2026-03-22-playback-pitch-rhythm.md](wiki/2026-03-22-playback-pitch-rhythm.md)
 
 ### ⚙️ 应用设置页 (2026-03-22)
 - 新增设置页（「我的」→「设置」），SharedPreferences 持久化
@@ -320,4 +354,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 19:45*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 23:00*

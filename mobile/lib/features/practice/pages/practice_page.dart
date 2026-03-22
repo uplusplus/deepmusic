@@ -46,6 +46,9 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   // 从 MusicXML 解析的 Score (用于 ScoreFollower)
   Score? _parsedScore;
 
+  // XML 缓存（旋转/重建时不重复下载）
+  static final Map<String, String> _xmlCache = {};
+
   // OSMD 渲染
   String? _xmlContent;
   bool _isLoadingXml = true;
@@ -87,6 +90,16 @@ class _PracticePageState extends ConsumerState<PracticePage> {
 
   void _initMidiConnection() {
     debugPrint('[PracticePage] initState: MidiService.currentState=${_midiService.currentState}, device=${_midiService.connectedDevice?.name}');
+
+    // 如果没有已连接设备，尝试自动连接
+    if (_midiService.currentState != MidiConnectionState.connected &&
+        _midiService.currentState != MidiConnectionState.connecting) {
+      debugPrint('[PracticePage] No device connected, triggering autoConnect...');
+      _midiService.autoConnect().catchError((e) {
+        debugPrint('[PracticePage] autoConnect failed: $e');
+        return false;
+      });
+    }
 
     _connectionSub = _midiService.connectionState.listen((state) {
       debugPrint('[PracticePage] stream event: $state, device=${_midiService.connectedDevice?.name}');
@@ -134,24 +147,48 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   }
 
   Future<void> _loadScoreXml() async {
+    // 有缓存直接用，不重新下载
+    final cached = _xmlCache[widget.scoreId];
+    if (cached != null) {
+      debugPrint('[PracticePage] Using cached XML for ${widget.scoreId}');
+      final score = MusicXmlParser.parseString(cached, scoreId: widget.scoreId);
+      if (mounted) setState(() {
+        _xmlContent = cached;
+        _parsedScore = score;
+        _isLoadingXml = false;
+        _xmlError = null;
+      });
+      return;
+    }
+
     setState(() {
       _isLoadingXml = true;
       _xmlError = null;
     });
-    try {
-      final xml = await _scoreRepo.getScoreXml(widget.scoreId);
-      // 同时解析为 Score 对象
-      final score = MusicXmlParser.parseString(xml, scoreId: widget.scoreId);
-      if (mounted) setState(() {
-        _xmlContent = xml;
-        _parsedScore = score;
-        _isLoadingXml = false;
-      });
-    } catch (e) {
-      if (mounted) setState(() {
-        _xmlError = e.toString();
-        _isLoadingXml = false;
-      });
+    const maxRetries = 3;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final xml = await _scoreRepo.getScoreXml(widget.scoreId);
+        _xmlCache[widget.scoreId] = xml;
+        // 同时解析为 Score 对象
+        final score = MusicXmlParser.parseString(xml, scoreId: widget.scoreId);
+        if (mounted) setState(() {
+          _xmlContent = xml;
+          _parsedScore = score;
+          _isLoadingXml = false;
+        });
+        return;
+      } catch (e) {
+        debugPrint('[PracticePage] loadScoreXml attempt $attempt/$maxRetries failed: $e');
+        if (attempt < maxRetries) {
+          await Future.delayed(Duration(milliseconds: 500 * attempt));
+          continue;
+        }
+        if (mounted) setState(() {
+          _xmlError = e.toString();
+          _isLoadingXml = false;
+        });
+      }
     }
   }
 
@@ -538,38 +575,6 @@ class _PracticePageState extends ConsumerState<PracticePage> {
               ),
             ),
 
-          // 准备状态提示
-          if (_state == PracticeState.ready || _state == PracticeState.idle)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black26,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 16)],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _state == PracticeState.ready ? Icons.play_circle : Icons.bluetooth_disabled,
-                          size: 48,
-                          color: _state == PracticeState.ready ? AppColors.primary : Colors.grey,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _state == PracticeState.ready ? '按下琴键或点击开始' : '请先连接 MIDI 设备',
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

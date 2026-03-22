@@ -1,6 +1,6 @@
 # DeepMusic - 技术架构文档
 
-> 版本: 1.1 | 更新: 2026-03-20
+> 版本: 1.2 | 更新: 2026-03-22
 
 ---
 
@@ -316,30 +316,44 @@ MusicXML File
     │     ├── title, composer, movement-title
     │     ├── key (fifths + mode)
     │     ├── time (beats + beat-type)
-    │     └── divisions (每四分音符的 tick 数)
+    │     ├── divisions (每四分音符的 tick 数)
+    │     └── tempo (优先 <direction><sound tempo="..."/>)
+    │
+    ├── 调号与临时记号处理
+    │     ├── 每小节初始化 measureAccidentals = 调号默认值 (fifths → 升降号映射)
+    │     ├── 音符解析优先级:
+    │     │     1. <pitch><alter> (显式, 最高优先级)
+    │     │     2. <accidental> (sharp/flat/natural → alter 推导)
+    │     │     3. measureAccidentals[step] (小节内沿用 / 调号默认)
+    │     ├── 显式 alter/accidental 更新 measureAccidentals (同小节后续沿用)
+    │     ├── 跨小节自动重置为调号默认值
+    │     └── 支持小节内 <attributes><key> 中途转调
     │
     ├── 音符解析
-    │     ├── pitch → Note (step + alter + octave → pitchNumber)
+    │     ├── pitch → Note (step + resolvedAlter + octave → pitchNumber)
     │     ├── duration → Note.duration
-    │     ├── type → Note.type (whole, half, quarter, eighth...)
+    │     ├── velocity (从 <velocity> / dynamics 属性解析，默认 80)
+    │     ├── staff (谱表: 1=右手, 2=左手)
     │     └── rest / chord 标记
     │
     ├── 时间轴计算
-    │     └── 基于 divisions 和 tempo 生成每个音符的 startMs
+    │     ├── 基于 divisions 和 tempo 生成每个音符的 startMs
+    │     └── 累计小节时间 (支持变拍号和 tempo 中途变更)
     │
-    └── 输出 Score 对象 (含所有 Part/Measure/Note)
+    └── 输出 Score 对象 (含 Part/Measure/Note/KeySignature/TimeSignature/tempo)
 ```
 
 **关键转换**:
 ```dart
-// MusicXML pitch → MIDI pitchNumber
-// step(C=0..6) + alter(-1/0/+1) + octave → (octave+1)*12 + noteIndex
+// MusicXML pitch → MIDI pitchNumber (使用 resolvedAlter 而非原始 alter)
+// step(C=0..6) + resolvedAlter(-2..+2) + octave → (octave+1)*12 + noteIndex
+
+// 调号隐含升降号: fifths=1(G大调) → F:1, fifths=-2(Bb大调) → B:-1, E:-1
 
 // duration → 毫秒
 // startMs = cumulativeDuration / divisions × (60000 / tempo)
 
-// 示例: divisions=4, tempo=120
-// 四分音符 duration=4 → 4/4 × 60000/120 = 500ms
+// velocity: 默认 80, 可从 <velocity> 元素覆盖
 ```
 
 #### 2.2.5 Score Renderer (乐谱渲染)

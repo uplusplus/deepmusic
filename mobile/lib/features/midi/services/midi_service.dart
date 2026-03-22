@@ -870,6 +870,14 @@ class MidiService {
     debugPrint('[MidiService] sendNoteOff: note=$note, ch=$channel');
   }
 
+  /// 发送 MIDI Control Change
+  void sendControlChange(int controller, int value, {int channel = 0}) {
+    final statusByte = 0xB0 | (channel & 0x0F);
+    final data = Uint8List.fromList([statusByte, controller & 0x7F, value & 0x7F]);
+    _sendMidiData(data);
+    debugPrint('[MidiService] sendCC: cc=$controller, value=$value, ch=$channel');
+  }
+
   /// 发送原始 MIDI 数据到已连接的设备
   void _sendMidiData(Uint8List data) {
     if (_connectedDevice == null) {

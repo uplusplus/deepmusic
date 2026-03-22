@@ -22,6 +22,14 @@ class ScheduledMidiEvent {
   });
 }
 
+/// 播放音符事件 (驱动虚拟键盘高亮)
+class PlayingNoteEvent {
+  final int noteNumber;
+  final bool isOn; // true=noteOn, false=noteOff
+
+  const PlayingNoteEvent({required this.noteNumber, required this.isOn});
+}
+
 /// 自动播放状态
 class AutoPlayState {
   final bool isPlaying;
@@ -32,6 +40,7 @@ class AutoPlayState {
   final double playbackRate;
   final Duration position;
   final Duration duration;
+  final bool loopEnabled;
 
   const AutoPlayState({
     required this.isPlaying,
@@ -42,6 +51,7 @@ class AutoPlayState {
     required this.playbackRate,
     required this.position,
     required this.duration,
+    this.loopEnabled = false,
   });
 
   AutoPlayState.initial()
@@ -52,7 +62,8 @@ class AutoPlayState {
         totalMeasures = 0,
         playbackRate = 1.0,
         position = Duration.zero,
-        duration = Duration.zero;
+        duration = Duration.zero,
+        loopEnabled = false;
 }
 
 /// 自动播放器
@@ -83,6 +94,11 @@ class AutoPlayer {
   int _currentMeasure = 1;
   int _totalDurationMs = 0;
 
+  // 循环播放
+  int? _loopStartMs;
+  int? _loopEndMs;
+  bool _loopEnabled = false;
+
   // 预调度窗口：Timer jitter 容忍度 (ms)
   // Timer 虽然设置了 Nms 后触发，实际可能延迟 Mms
   // 用 lookahead 窗口提前处理"快到了"的事件，避免因 Timer 延迟导致音符丢失
@@ -103,6 +119,12 @@ class AutoPlayer {
   /// 当前小节流 (驱动 OSMD 高亮)
   Stream<int> get measureStream => _measureController.stream;
 
+  /// 当前播放音符流 (驱动虚拟键盘高亮)
+  Stream<PlayingNoteEvent> get noteStream => _noteController.stream;
+
+  /// 播放中的音符事件
+  final _noteController = StreamController<PlayingNoteEvent>.broadcast();
+
   bool get isPlaying => _isPlaying;
   bool get isPaused => _isPaused;
   int get currentMeasure => _currentMeasure;
@@ -110,6 +132,15 @@ class AutoPlayer {
 
   /// 是否有物理 MIDI 设备连接
   bool get hasMidiDevice => _midiService.connectedDevice != null;
+
+  bool get loopEnabled => _loopEnabled;
+  int? get loopStartMs => _loopStartMs;
+  int? get loopEndMs => _loopEndMs;
+
+  /// 是否应该走 MIDI 输出（设置为 MIDI 且有设备连接）
+  bool get _useMidiOutput =>
+      AppSettings().audioOutputMode == AudioOutputMode.midi &&
+      _midiService.connectedDevice != null;
 
   AutoPlayer(this.score) {
     _events = _buildScheduledEvents();
@@ -126,17 +157,12 @@ class AutoPlayer {
 
   /// 从乐谱音符生成调度事件列表
   ///
-  /// 🔑 关键修复: 使用 score.tempo 而非硬编码 120
-  /// 此前 bug: tempo=120 导致 durationMs 偏短/偏长，音符提前截断或拖尾
+  /// 使用解析器已计算的 startMs 和 durationMs（已按各小节 tempo 正确处理变速）
   List<ScheduledMidiEvent> _buildScheduledEvents() {
     final events = <ScheduledMidiEvent>[];
     final notes = score.allNotes;
-    final tempo = score.tempo; // ✅ 使用实际乐谱 tempo
-    final beatMs = 60000.0 / tempo;
 
     for (final note in notes) {
-      final durationMs = (note.duration * beatMs).round();
-
       // Note On — 使用乐谱中的 velocity
       events.add(ScheduledMidiEvent(
         noteNumber: note.pitchNumber,
@@ -146,11 +172,11 @@ class AutoPlayer {
         measureNumber: note.measureNumber,
       ));
 
-      // Note Off
+      // Note Off — 使用解析器算好的 durationMs（已按所在小节 tempo 计算）
       events.add(ScheduledMidiEvent(
         noteNumber: note.pitchNumber,
         velocity: 0,
-        absoluteMs: note.startMs + durationMs,
+        absoluteMs: note.startMs + note.durationMs,
         isNoteOn: false,
         measureNumber: note.measureNumber,
       ));
@@ -170,7 +196,7 @@ class AutoPlayer {
       // 恢复播放
       _isPaused = false;
       _stopwatch.start();
-      if (AppSettings().audioOutputMode != AudioOutputMode.midi) {
+      if (!_useMidiOutput) {
         _audioSynth.resume();
       }
     } else {
@@ -181,7 +207,7 @@ class AutoPlayer {
       _lastStateEmitMs = 0;
       _stopwatch.reset();
       _stopwatch.start();
-      if (AppSettings().audioOutputMode != AudioOutputMode.midi) {
+      if (!_useMidiOutput) {
         _audioSynth.resume();
       }
     }
@@ -205,7 +231,7 @@ class AutoPlayer {
 
     // 发送所有活跃音符的 noteOff
     _allNotesOff();
-    if (AppSettings().audioOutputMode != AudioOutputMode.midi) {
+    if (!_useMidiOutput) {
       _audioSynth.pause();
     }
   }
@@ -252,6 +278,49 @@ class AutoPlayer {
     _emitState();
   }
 
+  /// 设置循环范围 (小节号)
+  void setLoopRange(int startMeasure, int endMeasure) {
+    // 找到起始小节第一个事件的时间
+    int startMs = 0;
+    for (final e in _events) {
+      if (e.measureNumber >= startMeasure && e.isNoteOn) {
+        startMs = e.absoluteMs;
+        break;
+      }
+    }
+    // 找到结束小节最后一个事件的时间
+    int endMs = _totalDurationMs;
+    for (final e in _events.reversed) {
+      if (e.measureNumber <= endMeasure) {
+        endMs = e.absoluteMs;
+        break;
+      }
+    }
+
+    _loopStartMs = startMs;
+    _loopEndMs = endMs;
+    _loopEnabled = true;
+    debugPrint('[AutoPlayer] Loop range: measures $startMeasure-$endMeasure (${startMs}ms-${endMs}ms)');
+  }
+
+  /// 清除循环
+  void clearLoop() {
+    _loopStartMs = null;
+    _loopEndMs = null;
+    _loopEnabled = false;
+    debugPrint('[AutoPlayer] Loop cleared');
+  }
+
+  /// 切换循环开关
+  void toggleLoop() {
+    if (_loopEnabled) {
+      clearLoop();
+    } else {
+      // 默认循环当前小节
+      setLoopRange(_currentMeasure, _currentMeasure);
+    }
+  }
+
   /// 使用微秒级 Stopwatch 计算当前播放时间
   /// 比 elapsedMilliseconds (int 截断) 更精确
   int _getPlaybackMs() {
@@ -283,6 +352,26 @@ class AutoPlayer {
     // 计算到下一个事件的延迟
     if (_eventIndex < _events.length) {
       final playbackMs = _getPlaybackMs();
+
+      // 循环: 如果启用了循环且超出循环范围，跳回循环起点
+      if (_loopEnabled && _loopEndMs != null && playbackMs >= _loopEndMs!) {
+        _allNotesOff();
+        _elapsedBaseMs = _loopStartMs ?? 0;
+        _stopwatch.reset();
+        _stopwatch.start();
+        _eventIndex = _findStartIndexByMs(_loopStartMs ?? 0);
+        // 找到循环起点对应的小节
+        for (int i = _eventIndex; i < _events.length; i++) {
+          if (_events[i].isNoteOn) {
+            _currentMeasure = _events[i].measureNumber;
+            _measureController.add(_currentMeasure);
+            break;
+          }
+        }
+        _scheduleNextTick(); // 立即重新调度
+        return;
+      }
+
       final nextEventMs = _events[_eventIndex].absoluteMs;
       // 减去 lookahead 窗口，提前唤醒处理
       int delayMs = ((nextEventMs - playbackMs) / _playbackRate).round() - _lookaheadMs;
@@ -302,7 +391,7 @@ class AutoPlayer {
 
     // 批量发送到达时间点的事件 (包含 lookahead 窗口)
     // lookahead 确保 Timer jitter 不会导致事件延迟播放
-    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
+    final isMidiMode = _useMidiOutput;
 
     while (_eventIndex < _events.length) {
       final event = _events[_eventIndex];
@@ -317,12 +406,14 @@ class AutoPlayer {
         } else {
           _audioSynth.noteOn(event.noteNumber, event.velocity);
         }
+        _noteController.add(PlayingNoteEvent(noteNumber: event.noteNumber, isOn: true));
       } else {
         if (isMidiMode) {
           _midiService.sendNoteOff(event.noteNumber);
         } else {
           _audioSynth.noteOff(event.noteNumber);
         }
+        _noteController.add(PlayingNoteEvent(noteNumber: event.noteNumber, isOn: false));
       }
 
       if (event.measureNumber != _currentMeasure) {
@@ -350,9 +441,18 @@ class AutoPlayer {
     return 0;
   }
 
+  /// 查找指定毫秒时间的起始事件索引
+  int _findStartIndexByMs(int ms) {
+    for (int i = 0; i < _events.length; i++) {
+      if (_events[i].absoluteMs >= ms && _events[i].isNoteOn) {
+        return i;
+      }
+    }
+    return 0;
+  }
+
   void _allNotesOff() {
-    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
-    if (isMidiMode) {
+    if (_useMidiOutput) {
       for (int note = 0; note < 128; note++) {
         _midiService.sendNoteOff(note);
       }
@@ -376,6 +476,7 @@ class AutoPlayer {
       playbackRate: _playbackRate,
       position: Duration(milliseconds: playbackMs),
       duration: Duration(milliseconds: _totalDurationMs),
+      loopEnabled: _loopEnabled,
     ));
   }
 
@@ -385,5 +486,6 @@ class AutoPlayer {
     _audioSynth.dispose();
     _stateController.close();
     _measureController.close();
+    _noteController.close();
   }
 }

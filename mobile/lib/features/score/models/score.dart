@@ -10,6 +10,7 @@ class Score {
   final String difficulty;  // beginner, intermediate, advanced
   final List<Part> parts;
   final int totalMeasures;
+  final int tempo;          // 初始 BPM
   final Duration estimatedDuration;
   final String? coverImage;
   final String musicXmlPath;
@@ -25,6 +26,7 @@ class Score {
     required this.difficulty,
     required this.parts,
     required this.totalMeasures,
+    this.tempo = 120,
     required this.estimatedDuration,
     this.coverImage,
     required this.musicXmlPath,
@@ -174,20 +176,24 @@ class KeySignature {
 class Note {
   final String pitch;
   final int pitchNumber;
-  final double duration;
+  final double duration;     // 时值（拍数，四分音符 = 1.0）
+  final int durationMs;      // 实际毫秒时长（已按所在小节 tempo 计算）
   final int startMs;
   final int measureNumber;
   final int staff;           // 1=高音谱/右手, 2=低音谱/左手, 0=未知
   final int staffPosition;   // 五线谱位置（已废弃，保留兼容）
+  final int velocity;        // 力度 0-127，默认 80
 
   Note({
     required this.pitch,
     required this.pitchNumber,
     required this.duration,
+    this.durationMs = 0,
     required this.startMs,
     required this.measureNumber,
     this.staff = 0,
     this.staffPosition = 0,
+    this.velocity = 80,
   });
 
   /// 是否为右手音符
@@ -216,6 +222,7 @@ class Note {
       pitch: pitchName,
       pitchNumber: pitchNumber,
       duration: 1.0,
+      durationMs: 0,
       startMs: 0,
       measureNumber: measureNumber,
     );
@@ -225,17 +232,21 @@ class Note {
     String? pitch,
     int? pitchNumber,
     double? duration,
+    int? durationMs,
     int? startMs,
     int? measureNumber,
     int? staff,
+    int? velocity,
   }) {
     return Note(
       pitch: pitch ?? this.pitch,
       pitchNumber: pitchNumber ?? this.pitchNumber,
       duration: duration ?? this.duration,
+      durationMs: durationMs ?? this.durationMs,
       startMs: startMs ?? this.startMs,
       measureNumber: measureNumber ?? this.measureNumber,
       staff: staff ?? this.staff,
+      velocity: velocity ?? this.velocity,
     );
   }
 

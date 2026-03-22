@@ -18,6 +18,12 @@ class PianoKeyboard extends StatefulWidget {
   /// 应弹的音高集合（来自 ScoreFollower）
   final Set<int> expectedPitches;
 
+  /// 当前正在播放的音符（来自 AutoPlayer，实时高亮）
+  final Set<int> playingNotes;
+
+  /// 播放音符版本号（父级控制，变化时触发重绘）
+  final int playingVersion;
+
   /// 高度
   final double height;
 
@@ -30,6 +36,8 @@ class PianoKeyboard extends StatefulWidget {
   const PianoKeyboard({
     super.key,
     required this.expectedPitches,
+    this.playingNotes = const {},
+    this.playingVersion = 0,
     this.height = 120,
     this.onNoteOn,
     this.onNoteOff,
@@ -47,6 +55,9 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
 
   /// 当前按下的音符集合
   final Set<int> _pressedNotes = {};
+
+  /// 按键变化计数器，用于触发 shouldRepaint
+  int _pressVersion = 0;
 
   /// 当前触摸指针对应的音符（pointerId → noteNumber）
   final Map<int, int> _touchPointers = {};
@@ -78,8 +89,11 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
   }
 
   Future<void> _initSynth() async {
+    debugPrint('[KB] _initSynth: checking, isInitialized=${_synthService.isInitialized}');
     if (!_synthService.isInitialized) {
+      debugPrint('[KB] _initSynth: calling init()');
       await _synthService.init();
+      debugPrint('[KB] _initSynth: done, isInitialized=${_synthService.isInitialized}');
     }
   }
 
@@ -129,14 +143,20 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
 
   // ── 触摸弹奏 ──
 
+  /// 是否应该走 MIDI 输出（设置为 MIDI 且有设备连接）
+  bool get _useMidiOutput =>
+      AppSettings().audioOutputMode == AudioOutputMode.midi &&
+      _midiService.connectedDevice != null;
+
   void _handleNoteDown(int note, {int velocity = 100}) {
     if (!mounted) return;
+    debugPrint('[KB] _handleNoteDown: note=$note, useMidi=$_useMidiOutput, synthInit=${_synthService.isInitialized}');
     setState(() {
       _pressedNotes.add(note);
       _lastPressedNote = note;
+      _pressVersion++;
     });
-    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
-    if (isMidiMode) {
+    if (_useMidiOutput) {
       _midiService.sendNoteOn(note, velocity);
     } else {
       _synthService.noteOn(note, velocity);
@@ -148,9 +168,9 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     if (!mounted) return;
     setState(() {
       _pressedNotes.remove(note);
+      _pressVersion++;
     });
-    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
-    if (isMidiMode) {
+    if (_useMidiOutput) {
       _midiService.sendNoteOff(note);
     } else {
       _synthService.noteOff(note);
@@ -200,9 +220,8 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
   void dispose() {
     _midiSub?.cancel();
     _scrollCtrl.dispose();
-    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
     for (final note in _touchPointers.values) {
-      if (isMidiMode) {
+      if (_useMidiOutput) {
         _midiService.sendNoteOff(note);
       } else {
         _synthService.noteOff(note);
@@ -227,10 +246,12 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
       ),
       child: Listener(
         onPointerDown: (event) {
+          debugPrint('[KB] pointerDown local=${event.localPosition} size=${context.size}');
           // 需要加上 scroll offset 才是内容坐标
           final scrollOffset = _scrollCtrl.hasClients ? _scrollCtrl.offset : 0.0;
           final contentPos = Offset(event.localPosition.dx + scrollOffset, event.localPosition.dy);
           final note = _hitTestKey(contentPos);
+          debugPrint('[KB] hitTest contentPos=$contentPos → note=$note');
           if (note != null) {
             _touchPointers[event.pointer] = note;
             _handleNoteDown(note, velocity: 100);
@@ -238,6 +259,7 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
         },
         onPointerUp: (event) {
           final note = _touchPointers.remove(event.pointer);
+          debugPrint('[KB] pointerUp note=$note');
           if (note != null) _handleNoteUp(note);
         },
         onPointerCancel: (event) {
@@ -259,7 +281,10 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                 blackKeyWidth: _blackKeyWidth,
                 keyHeight: keyHeight,
                 pressedNotes: _pressedNotes,
+                pressVersion: _pressVersion,
                 expectedPitches: widget.expectedPitches,
+                playingNotes: widget.playingNotes,
+                playingVersion: widget.playingVersion,
               ),
             ),
           ),
@@ -280,7 +305,10 @@ class _PianoPainter extends CustomPainter {
   final double blackKeyWidth;
   final double keyHeight;
   final Set<int> pressedNotes;
+  final int pressVersion;
   final Set<int> expectedPitches;
+  final Set<int> playingNotes;
+  final int playingVersion;
 
   static const _whiteKeyPattern = [0, 2, 4, 5, 7, 9, 11];
   static const _blackSemitones = {1, 3, 6, 8, 10};
@@ -294,7 +322,10 @@ class _PianoPainter extends CustomPainter {
     required this.blackKeyWidth,
     required this.keyHeight,
     required this.pressedNotes,
+    required this.pressVersion,
     required this.expectedPitches,
+    this.playingNotes = const {},
+    this.playingVersion = 0,
   });
 
   @override
@@ -330,6 +361,7 @@ class _PianoPainter extends CustomPainter {
 
       final isPressed = pressedNotes.contains(noteNum);
       final isExpected = expectedPitches.contains(noteNum);
+      final isPlaying = playingNotes.contains(noteNum);
 
       if (isPressed) {
         canvas.drawRRect(rRect, pressedPaint);
@@ -337,6 +369,17 @@ class _PianoPainter extends CustomPainter {
         // 按下发光效果
         canvas.drawRRect(rRect, Paint()
           ..color = AppColors.accent.withOpacity(0.15)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+      } else if (isPlaying) {
+        // 播放中高亮 — 橙色渐变
+        canvas.drawRRect(rRect, Paint()..color = const Color(0xFFFFF3E0));
+        canvas.drawRRect(rRect, Paint()
+          ..color = const Color(0xFFFF9800).withOpacity(0.35)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5);
+        // 发光效果
+        canvas.drawRRect(rRect, Paint()
+          ..color = const Color(0xFFFF9800).withOpacity(0.12)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
       } else if (isExpected) {
         canvas.drawRRect(rRect, expectedPaint);
@@ -356,8 +399,8 @@ class _PianoPainter extends CustomPainter {
             text: '${_whiteNames[nameIdx]}$octave',
             style: TextStyle(
               fontSize: 9,
-              color: isPressed ? AppColors.accent : (isExpected ? AppColors.primary : Colors.grey[400]),
-              fontWeight: isPressed || isExpected ? FontWeight.w600 : FontWeight.normal,
+              color: isPressed ? AppColors.accent : (isPlaying ? const Color(0xFFE65100) : (isExpected ? AppColors.primary : Colors.grey[400])),
+              fontWeight: isPressed || isPlaying || isExpected ? FontWeight.w600 : FontWeight.normal,
             ),
           ),
           textDirection: TextDirection.ltr,
@@ -400,6 +443,7 @@ class _PianoPainter extends CustomPainter {
 
       final isPressed = pressedNotes.contains(noteNum);
       final isExpected = expectedPitches.contains(noteNum);
+      final isPlaying = playingNotes.contains(noteNum);
 
       // 投影
       if (!isPressed) {
@@ -409,6 +453,12 @@ class _PianoPainter extends CustomPainter {
       if (isPressed) {
         canvas.drawRRect(rRect, pressedGlowPaint);
         canvas.drawRRect(rRect, pressedPaint);
+      } else if (isPlaying) {
+        // 播放中 — 橙色
+        canvas.drawRRect(rRect, Paint()
+          ..color = const Color(0xFFFF9800).withOpacity(0.2)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+        canvas.drawRRect(rRect, Paint()..color = const Color(0xFFE65100));
       } else if (isExpected) {
         canvas.drawRRect(rRect, expectedPaint);
       } else {
@@ -428,6 +478,9 @@ class _PianoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PianoPainter old) {
-    return old.pressedNotes != pressedNotes || old.expectedPitches != expectedPitches;
+    return old.pressVersion != pressVersion ||
+        old.playingVersion != playingVersion ||
+        old.expectedPitches.length != expectedPitches.length ||
+        !old.expectedPitches.containsAll(expectedPitches);
   }
 }
