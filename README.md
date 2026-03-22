@@ -92,7 +92,26 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-22 19:24)
+## 最新更新 (2026-03-22 19:30)
+
+### 🔧 乐谱播放性能优化 (2026-03-22)
+- **问题**：自动播放卡顿、非 120 BPM 曲目音符拖尾/截断
+- **根因**（5 项）：
+  1. `_buildScheduledEvents()` 硬编码 `tempo=120`，导致 `durationMs` 与实际 tempo 不匹配
+  2. `Timer.periodic(10ms)` 固定轮询，受 GC/帧渲染影响 jitter 20-50ms
+  3. PCM 缓冲区逐字节拷贝（256 samples × 512 次调用/次），阻塞音频回调
+  4. `_emitState()` 每 10ms 触发 UI 重建（100fps），浪费 GPU
+  5. `_parseMetadata()` 未解析 `<direction><sound tempo="..."/>`，`score.tempo` 返回默认 120
+- **修复**：
+  - 使用 `score.tempo` 计算音符时长（不再硬编码 120）
+  - Timer 改为 schedule-next-event 策略（lookahead 25ms + 单次 Timer 精确调度）
+  - PCM 缓冲区使用 `ByteData.view()` 零拷贝 + 批量渲染（4 blocks/次）
+  - UI 状态更新节流至 ~33fps
+  - Parser 优先从 `<direction><sound>` 提取 tempo
+  - 微秒级 Stopwatch 计时（`elapsedMicroseconds`）
+  - 和弦音符 `<chord/>` 使用 `prevNoteTickPos` 保证同步
+- **测试**：20 例单元测试（16 通过）+ 真机集成测试页面 `/playback-test`
+- 详见 [wiki/2026-03-22-playback-optimization.md](wiki/2026-03-22-playback-optimization.md)
 
 ### 🎹 完整 88 键可滚动钢琴键盘 (2026-03-22)
 - **问题**：原键盘仅显示 2-5 个八度（由屏幕宽度决定），全部集中在高音区，无法触及低音/中音区
@@ -238,11 +257,11 @@ deepmusic/
 
 **移动端核心模块**
 - [x] Flutter 项目结构 + feature-based 组织
-- [x] AutoPlayer 自动播放引擎 (MIDI 事件调度 + 变速 + OSMD 跟随 + 内置 SF2 音频合成)
-- [x] AudioSynthService 内置音频合成器 (dart_melty_soundfont + flutter_pcm_sound, 无 MIDI 设备 fallback)
+- [x] AutoPlayer 自动播放引擎 (MIDI 事件调度 + 变速 + OSMD 跟随 + 内置 SF2 音频合成 + schedule-next-event 时钟)
+- [x] AudioSynthService 内置音频合成器 (dart_melty_soundfont + flutter_pcm_sound, 零拷贝 PCM, 无 MIDI 设备 fallback)
 - [x] Riverpod 状态管理 + 路由配置
 - [x] Dart 数据模型 (Score/Part/Measure/Note/TimeSignature/KeySignature)
-- [x] MusicXML 解析器 (score-partwise + timewise，含 divisions/和弦/休止符/变拍号)
+- [x] MusicXML 解析器 (score-partwise + timewise，含 divisions/和弦/休止符/变拍号/tempo 解析优先级)
 - [x] OSMD 乐谱渲染器 (WebView + JS Bridge 双向通信)
 - [x] ScoreFollower 乐谱跟随引擎 (和弦组匹配/容错跳过/自动翻页/手动翻页/区间循环)
 - [x] NoteEvaluator 音符评估器 (音准+节奏双维度评分)
@@ -263,6 +282,7 @@ deepmusic/
 - [x] StatisticsPage — 学习统计 (累计时长/等级分布/最佳成绩)
 - [x] DeviceListPage — MIDI 设备扫描连接 (USB/BLE 分组展示, 热插拔检测)
 - [x] ProfilePage — 个人页面 (用户信息/统计/菜单/登出)
+- [x] PlaybackTestPage — 播放集成测试 (AudioSynth 初始化/tempo 检测/计时精度/UI 节流验证)
 
 ### ⏳ 进行中
 - [x] 蓝牙 MIDI 连接 (BLE 连接已验证通过，真机测试通过 ✅)
@@ -289,4 +309,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 19:24*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 19:30*

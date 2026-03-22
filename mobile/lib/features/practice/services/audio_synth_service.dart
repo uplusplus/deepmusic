@@ -30,6 +30,8 @@ class AudioSynthService {
 
   // 渲染缓冲区
   ArrayInt16? _renderBuf;
+  // 预分配的 PCM 数据缓冲区，避免每次 feed 都 new ByteData
+  PcmArrayInt16? _pcmBuf;
 
   bool get isInitialized => _isInitialized;
 
@@ -60,6 +62,8 @@ class AudioSynthService {
 
       // 初始化 PCM 缓冲区
       _renderBuf = ArrayInt16.zeros(numShorts: _blockSize);
+      // 预分配 PcmArrayInt16，避免 feed 时重复分配
+      _pcmBuf = PcmArrayInt16(bytes: ByteData(_blockSize * 2));
 
       // 初始化 flutter_pcm_sound (mono 输出)
       FlutterPcmSound.setLogLevel(LogLevel.error);
@@ -79,24 +83,32 @@ class AudioSynthService {
   }
 
   /// PCM feed 回调 — flutter_pcm_sound 需要更多数据时调用
+  ///
+  /// 🔑 优化: 预分配缓冲区 + 减少 async 平台调用次数
+  /// 此前问题: 每个 block 做 512 次单字节拷贝 + 循环中频繁 await platform call
   void _onFeed(int remainingFrames) async {
-    if (!_isInitialized || _synth == null || _renderBuf == null) return;
+    if (!_isInitialized || _synth == null || _renderBuf == null || _pcmBuf == null) return;
 
-    // 持续喂数据直到缓冲区足够
-    while (true) {
+    // 批量渲染: 一次喂 4 个 block (~23ms 音频)，减少 platform call 频率
+    const int blocksPerFeed = 4;
+
+    for (int b = 0; b < blocksPerFeed; b++) {
       final remaining = await FlutterPcmSound.remainingFrames();
       if (remaining > _feedThreshold * 2) break;
 
       // 渲染一个 block 的 mono PCM
       _synth!.renderMonoInt16(_renderBuf!);
 
-      // ArrayInt16 → PcmArrayInt16 (复制 bytes)
-      final src = _renderBuf!.bytes;
-      final dst = ByteData(src.lengthInBytes);
-      for (int i = 0; i < src.lengthInBytes; i++) {
-        dst.setUint8(i, src.getUint8(i));
-      }
-      await FlutterPcmSound.feed(PcmArrayInt16(bytes: dst));
+      // 🔑 使用 ByteData.view() 直接引用源内存，零拷贝
+      // ArrayInt16.bytes 是 Int16List，底层是 ByteBuffer
+      // 直接创建视图引用同一块内存，不做逐字节复制
+      final srcBytes = _renderBuf!.bytes;
+      final byteData = ByteData.view(
+        srcBytes.buffer,
+        srcBytes.offsetInBytes,
+        srcBytes.lengthInBytes,
+      );
+      await FlutterPcmSound.feed(PcmArrayInt16(bytes: byteData));
     }
   }
 
@@ -157,6 +169,8 @@ class AudioSynthService {
   void dispose() {
     stop();
     _synth = null;
+    _renderBuf = null;
+    _pcmBuf = null;
     _isInitialized = false;
   }
 }

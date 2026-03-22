@@ -63,6 +63,7 @@ class MusicXmlParser {
         difficulty: _guessDifficulty(allNotes, metadata.tempo),
         parts: parts,
         totalMeasures: totalMeasures,
+        tempo: metadata.tempo,
         estimatedDuration: _estimateDuration(allNotes, metadata.tempo),
         musicXmlPath: filePath ?? '',
         tags: [],
@@ -128,13 +129,28 @@ class MusicXmlParser {
     if (firstPart != null) {
       final firstMeasure = firstPart.getElement('measure');
       if (firstMeasure != null) {
-        for (final sound in firstMeasure.findElements('sound')) {
-          final tempoAttr = sound.getAttribute('tempo');
-          if (tempoAttr != null) {
-            tempo = int.tryParse(tempoAttr) ?? tempo;
-            break;
+        // 优先: <direction><sound tempo="..."/></direction>
+        for (final dir in firstMeasure.findElements('direction')) {
+          final sound = dir.getElement('sound');
+          if (sound != null) {
+            final t = sound.getAttribute('tempo');
+            if (t != null) {
+              tempo = int.tryParse(t) ?? tempo;
+              break;
+            }
           }
         }
+        // 备选: <sound tempo="..."/> 作为 measure 直接子元素
+        if (tempo == 120) {
+          for (final sound in firstMeasure.findElements('sound')) {
+            final tempoAttr = sound.getAttribute('tempo');
+            if (tempoAttr != null) {
+              tempo = int.tryParse(tempoAttr) ?? tempo;
+              break;
+            }
+          }
+        }
+        // 备选: <metronome><per-minute>
         if (tempo == 120) {
           for (final dir in firstMeasure.findElements('direction')) {
             final dirType = dir.getElement('direction-type');
@@ -223,7 +239,7 @@ class MusicXmlParser {
           }
         }
 
-        // ── 速度变更 ──
+        // ── 速度变更 (支持 <sound tempo="..."/> 在 <direction> 内或作为 measure 直接子元素) ──
         for (final dir in measureEl.findElements('direction')) {
           final sound = dir.getElement('sound');
           if (sound != null) {
@@ -231,10 +247,20 @@ class MusicXmlParser {
             if (t != null) tempo = int.tryParse(t) ?? tempo;
           }
         }
+        for (final sound in measureEl.findElements('sound')) {
+          final t = sound.getAttribute('tempo');
+          if (t != null) tempo = int.tryParse(t) ?? tempo;
+        }
 
         // ── 解析音符 ──
         final notes = <Note>[];
         int tickPos = 0;
+        int prevNoteTickPos = 0;
+
+        // 每小节初始化：调号默认升降号 + 小节内临时记号追踪
+        final measureAccidentals = Map<String, int>.from(
+          _getKeyAlterations(keySig.fifths),
+        );
 
         for (final child in measureEl.children) {
           if (child is! XmlElement) continue;
@@ -242,6 +268,35 @@ class MusicXmlParser {
 
           if (tag == 'note') {
             final chord = child.getElement('chord') != null;
+            final effectiveTickPos = chord ? prevNoteTickPos : tickPos;
+
+            // ── 升降号解析优先级 ──
+            // 1. <pitch><alter> (显式, 最高优先级)
+            // 2. <accidental> (显示记号, 影响演奏)
+            // 3. 小节内同音名之前的临时记号 / 调号默认
+            final step = child
+                .getElement('pitch')
+                ?.getElement('step')
+                ?.innerText ?? '';
+            int resolvedAlter = 0;
+
+            if (step.isNotEmpty) {
+              final alterEl = child.getElement('pitch')?.getElement('alter');
+              final accidentalEl = child.getElement('accidental');
+
+              if (alterEl != null) {
+                resolvedAlter = int.tryParse(alterEl.innerText) ?? 0;
+              } else if (accidentalEl != null) {
+                resolvedAlter = _alterFromAccidental(accidentalEl.innerText.trim());
+              } else {
+                resolvedAlter = measureAccidentals[step] ?? 0;
+              }
+
+              // 显式出现 alter 或 accidental → 更新小节追踪
+              if (alterEl != null || accidentalEl != null) {
+                measureAccidentals[step] = resolvedAlter;
+              }
+            }
 
             final note = _parseNote(
               child,
@@ -249,13 +304,14 @@ class MusicXmlParser {
               divisions: divisions,
               tempo: tempo,
               measureStartMs: cumulativeMs,
-              tickPos: chord ? tickPos : tickPos,
+              tickPos: effectiveTickPos,
+              resolvedAlter: resolvedAlter,
             );
 
             if (note != null) notes.add(note);
 
-            // 非和弦音符才推进 tick
             if (!chord) {
+              prevNoteTickPos = tickPos;
               final dur = child.getElement('duration');
               if (dur != null) {
                 tickPos += int.tryParse(dur.innerText) ?? divisions;
@@ -263,7 +319,22 @@ class MusicXmlParser {
                 tickPos += divisions;
               }
             }
+          } else if (tag == 'attributes') {
+            // 小节中间的属性变更 (如中途转调)
+            final keyEl = child.getElement('key');
+            if (keyEl != null) {
+              final fifths =
+                  int.tryParse(keyEl.getElement('fifths')?.innerText ?? '0') ?? 0;
+              keySig = KeySignature(
+                fifths: fifths,
+                mode: keyEl.getElement('mode')?.innerText ?? 'major',
+              );
+              measureAccidentals
+                ..clear()
+                ..addAll(_getKeyAlterations(fifths));
+            }
           } else if (tag == 'forward') {
+            prevNoteTickPos = tickPos;
             final dur = child.getElement('duration');
             if (dur != null) {
               tickPos += int.tryParse(dur.innerText) ?? divisions;
@@ -274,6 +345,7 @@ class MusicXmlParser {
               tickPos -= int.tryParse(dur.innerText) ?? divisions;
               if (tickPos < 0) tickPos = 0;
             }
+            prevNoteTickPos = tickPos;
           }
         }
 
@@ -297,7 +369,47 @@ class MusicXmlParser {
     return parts;
   }
 
-  // ────────────────────────────── 单音符解析 ──────────────────────────────
+  // ────────────────────────────── 辅助：调号和临时记号处理 ──────────────────────────────
+
+  /// 根据调号的 fifths 值返回每个音名的默认升降号
+  static Map<String, int> _getKeyAlterations(int fifths) {
+    const sharpOrder = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+    const flatOrder = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+    final alterations = <String, int>{
+      'C': 0, 'D': 0, 'E': 0, 'F': 0, 'G': 0, 'A': 0, 'B': 0,
+    };
+    if (fifths > 0) {
+      for (int i = 0; i < fifths && i < sharpOrder.length; i++) {
+        alterations[sharpOrder[i]] = 1;
+      }
+    } else if (fifths < 0) {
+      for (int i = 0; i < -fifths && i < flatOrder.length; i++) {
+        alterations[flatOrder[i]] = -1;
+      }
+    }
+    return alterations;
+  }
+
+  /// 将 <accidental> 文本映射为 alter 值
+  static int _alterFromAccidental(String accidental) {
+    switch (accidental) {
+      case 'sharp': return 1;
+      case 'flat': return -1;
+      case 'natural': return 0;
+      case 'double-sharp':
+      case 'sharp-sharp': return 2;
+      case 'flat-flat': return -2;
+      case 'natural-sharp': return 1;
+      case 'natural-flat': return -1;
+      case 'quarter-sharp': return 1;
+      case 'quarter-flat': return -1;
+      case 'three-quarters-sharp': return 1;
+      case 'three-quarters-flat': return -1;
+      default: return 0;
+    }
+  }
+
+
 
   static Note? _parseNote(
     XmlNode noteEl, {
@@ -306,6 +418,8 @@ class MusicXmlParser {
     required int tempo,
     required int measureStartMs,
     required int tickPos,
+    required int resolvedAlter,
+    int defaultStaff = 0,
   }) {
     // 休止符 → 跳过
     if (noteEl.getElement('rest') != null) return null;
@@ -315,14 +429,12 @@ class MusicXmlParser {
     if (pitchEl == null) return null;
 
     final step = pitchEl.getElement('step')?.innerText ?? 'C';
-    final alter =
-        int.tryParse(pitchEl.getElement('alter')?.innerText ?? '0') ?? 0;
     final octave =
         int.tryParse(pitchEl.getElement('octave')?.innerText ?? '4') ?? 4;
 
-    // MIDI pitchNumber
+    // MIDI pitchNumber — 使用调用方解析好的 alter (已考虑调号+临时记号)
     const stepIndex = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11};
-    final pitchNumber = (octave + 1) * 12 + (stepIndex[step] ?? 0) + alter;
+    final pitchNumber = (octave + 1) * 12 + (stepIndex[step] ?? 0) + resolvedAlter;
 
     // 时值
     final durTicks =
@@ -334,8 +446,26 @@ class MusicXmlParser {
     final msPerTick = 60000.0 / (tempo * divisions);
     final startMs = measureStartMs + (tickPos * msPerTick).round();
 
+    // 谱表
+    int staff = defaultStaff;
+    final staffEl = noteEl.getElement('staff');
+    if (staffEl != null) {
+      staff = int.tryParse(staffEl.innerText) ?? defaultStaff;
+    }
+
     // 音符名称
-    final pitchName = _buildPitchName(step, alter, octave);
+    final pitchName = _buildPitchName(step, resolvedAlter, octave);
+
+    // 力度
+    int velocity = 80;
+    final velEl = noteEl.getElement('velocity');
+    if (velEl != null) {
+      velocity = int.tryParse(velEl.innerText) ?? velocity;
+    }
+    final noteVelAttr = noteEl.getAttribute('dynamics');
+    if (noteVelAttr != null) {
+      velocity = int.tryParse(noteVelAttr) ?? velocity;
+    }
 
     return Note(
       pitch: pitchName,
@@ -343,6 +473,8 @@ class MusicXmlParser {
       duration: duration,
       startMs: startMs,
       measureNumber: measureNumber,
+      staff: staff,
+      velocity: velocity,
     );
   }
 

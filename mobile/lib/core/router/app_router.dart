@@ -8,7 +8,9 @@ import '../../features/score/pages/score_view_page.dart';
 import '../../features/practice/pages/practice_page.dart';
 import '../../features/practice/pages/practice_history_page.dart';
 import '../../features/practice/pages/statistics_page.dart';
+import '../../features/practice/pages/playback_test_page.dart';
 import '../../features/profile/pages/profile_page.dart';
+import '../../features/settings/pages/settings_page.dart';
 import '../../data/repositories/auth_repository.dart';
 
 class AppRouter {
@@ -23,7 +25,9 @@ class AppRouter {
   static const String practice = '/practice/:scoreId';
   static const String practiceHistory = '/practice-history';
   static const String statistics = '/statistics';
+  static const String playbackTest = '/playback-test';
   static const String profile = '/profile';
+  static const String settingsPage = '/settings';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -78,9 +82,19 @@ class AppRouter {
           builder: (_) => const StatisticsPage(),
           settings: settings,
         );
+      case playbackTest:
+        return MaterialPageRoute(
+          builder: (_) => const PlaybackTestPage(),
+          settings: settings,
+        );
       case profile:
         return MaterialPageRoute(
           builder: (_) => const ProfilePage(),
+          settings: settings,
+        );
+      case settingsPage:
+        return MaterialPageRoute(
+          builder: (_) => const SettingsPage(),
           settings: settings,
         );
       default:
