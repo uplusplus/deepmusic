@@ -135,7 +135,12 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
       _pressedNotes.add(note);
       _lastPressedNote = note;
     });
-    _synthService.noteOn(note, velocity);
+    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
+    if (isMidiMode) {
+      _midiService.sendNoteOn(note, velocity);
+    } else {
+      _synthService.noteOn(note, velocity);
+    }
     widget.onNoteOn?.call(note, velocity);
   }
 
@@ -144,7 +149,12 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     setState(() {
       _pressedNotes.remove(note);
     });
-    _synthService.noteOff(note);
+    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
+    if (isMidiMode) {
+      _midiService.sendNoteOff(note);
+    } else {
+      _synthService.noteOff(note);
+    }
     widget.onNoteOff?.call(note);
   }
 
@@ -190,8 +200,13 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
   void dispose() {
     _midiSub?.cancel();
     _scrollCtrl.dispose();
+    final isMidiMode = AppSettings().audioOutputMode == AudioOutputMode.midi;
     for (final note in _touchPointers.values) {
-      _synthService.noteOff(note);
+      if (isMidiMode) {
+        _midiService.sendNoteOff(note);
+      } else {
+        _synthService.noteOff(note);
+      }
     }
     _touchPointers.clear();
     super.dispose();

@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'features/settings/services/app_settings.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 加载用户设置
+  await AppSettings().load();
 
   // 允许横屏和竖屏，不锁定方向
   SystemChrome.setPreferredOrientations([

@@ -92,7 +92,17 @@ deepmusic/
 
 ---
 
-## 最新更新 (2026-03-22 19:30)
+## 最新更新 (2026-03-22 19:45)
+
+### ⚙️ 应用设置页 (2026-03-22)
+- 新增设置页（「我的」→「设置」），SharedPreferences 持久化
+- **音频输出模式**：MIDI 设备输出 / 本机内置合成器，全链路生效
+  - AutoPlayer 自动播放：根据设置走 MIDI 或 SF2 合成器
+  - 虚拟键盘触摸弹奏：同上
+- **默认显示键盘**：播放乐谱时是否默认展示虚拟钢琴键盘
+  - 播放栏提供键盘切换按钮，可临时覆盖
+- 影响文件：`app_settings.dart`（新）、`settings_page.dart`（新）、`auto_player.dart`、`piano_keyboard.dart`、`score_view_page.dart`、`app_router.dart`、`profile_page.dart`、`main.dart`
+- 详见 [wiki/2026-03-22-settings-page.md](wiki/2026-03-22-settings-page.md)
 
 ### 🔧 乐谱播放性能优化 (2026-03-22)
 - **问题**：自动播放卡顿、非 120 BPM 曲目音符拖尾/截断
@@ -282,6 +292,7 @@ deepmusic/
 - [x] StatisticsPage — 学习统计 (累计时长/等级分布/最佳成绩)
 - [x] DeviceListPage — MIDI 设备扫描连接 (USB/BLE 分组展示, 热插拔检测)
 - [x] ProfilePage — 个人页面 (用户信息/统计/菜单/登出)
+- [x] SettingsPage — 应用设置 (音频输出模式/默认显示键盘)
 - [x] PlaybackTestPage — 播放集成测试 (AudioSynth 初始化/tempo 检测/计时精度/UI 节流验证)
 
 ### ⏳ 进行中
@@ -309,4 +320,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 19:30*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-22 19:45*

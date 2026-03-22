@@ -170,7 +170,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
                   const Divider(height: 32),
 
-                  _buildMenuItem(Icons.settings, '设置', () {}),
+                  _buildMenuItem(Icons.settings, '设置', () {
+            Navigator.of(context).pushNamed(AppRouter.settingsPage);
+          }),
                   _buildMenuItem(Icons.help, '帮助与反馈', () {}),
                   _buildMenuItem(Icons.info, '关于 DeepMusic', () {}),
 
