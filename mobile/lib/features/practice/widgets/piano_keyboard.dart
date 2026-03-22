@@ -83,31 +83,39 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     }
 
     final baseNote = (baseOctave + 1) * 12; // baseOctave=4 → C4 (note 60)
-    final noteRange = 24; // 2 octaves
 
-    return Container(
-      height: widget.height,
-      color: Colors.grey[100],
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Center(
-        child: _buildPianoRow(baseNote, noteRange),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth - 16; // 减去 padding
+
+        // 根据可用宽度计算八度数量（白键宽度固定 ~40-48px）
+        const minWhiteKeyWidth = 36.0;
+        const maxWhiteKeyWidth = 48.0;
+        // 最多能放几个白键
+        final maxWhiteKeys = (availableWidth / minWhiteKeyWidth).floor();
+        // 白键数量 = 八度数 × 7
+        int octaves = (maxWhiteKeys / 7).clamp(2, 5);
+        final totalWhiteKeys = octaves * 7;
+        final noteRange = octaves * 12;
+        // 实际白键宽度
+        final actualWhiteKeyWidth = (availableWidth / totalWhiteKeys).clamp(minWhiteKeyWidth, maxWhiteKeyWidth);
+        final totalWidth = actualWhiteKeyWidth * totalWhiteKeys;
+        final blackKeyWidth = actualWhiteKeyWidth * 0.58;
+
+        // 调整 baseNote 确保范围合法 (C0 = note 12, B9 = note 119)
+        int safeBase = baseNote;
+        if (safeBase + noteRange > 120) safeBase = 120 - noteRange;
+        if (safeBase < 12) safeBase = 12;
+
+        return _buildPianoRow(safeBase, noteRange, totalWidth, actualWhiteKeyWidth, blackKeyWidth);
+      },
     );
   }
 
-  Widget _buildPianoRow(int startNote, int count) {
+  Widget _buildPianoRow(int startNote, int count, double totalWidth, double actualWhiteKeyWidth, double blackKeyWidth) {
     // 白键音名
     const whiteNames = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
     const whiteKeyPattern = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B 的半音偏移
-    // 黑键在白键序列中的位置比例 (0-1)
-    // C#=在C与D之间, D#=在D与E之间, 无E#, F#=在F与G之间, G#=在G与A之间, A#=在A与B之间
-    const blackKeyOffsets = {
-      1: 0.63,  // C# 在 C 之后
-      3: 0.63,  // D# 在 D 之后
-      6: 0.63,  // F# 在 F 之后
-      8: 0.63,  // G# 在 G 之后
-      10: 0.63, // A# 在 A 之后
-    };
 
     // 收集白键和黑键
     final whiteKeys = <_PianoKey>[];
@@ -140,48 +148,32 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
       }
     }
 
-    final whiteKeyWidth = 1.0 / whiteKeys.length;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth;
-        final availableHeight = constraints.maxHeight;
-
-        // 真实钢琴比例：白键宽高比约 1:5.5 (23mm × 150mm)，取 1:6 更美观
-        const maxWhiteKeyWidth = 44.0;
-        final idealWidth = whiteKeys.length * maxWhiteKeyWidth;
-        // 不超过可用宽度，不超过理想宽度
-        final totalWidth = idealWidth.clamp(0.0, availableWidth);
-        final actualWhiteKeyWidth = totalWidth / whiteKeys.length;
-        final blackKeyWidth = actualWhiteKeyWidth * 0.58;
-
-        return Center(
-          child: SizedBox(
-            width: totalWidth,
-            child: Stack(
-              children: [
-                // 白键层
-                Row(
-                  children: whiteKeys.map((key) {
-                    return SizedBox(
-                      width: actualWhiteKeyWidth,
-                      height: availableHeight - 4,
-                      child: _WhiteKey(
-                        label: key.label!,
-                        isExpected: key.isExpected,
-                        isPressed: key.isPressed,
-                      ),
-                    );
-                  }).toList(),
-                ),
-
-                // 黑键层
-                ..._buildBlackKeys(blackKeys, whiteKeys, actualWhiteKeyWidth, blackKeyWidth),
-              ],
+    return Center(
+      child: SizedBox(
+        width: totalWidth,
+        height: widget.height,
+        child: Stack(
+          children: [
+            // 白键层
+            Row(
+              children: whiteKeys.map((key) {
+                return SizedBox(
+                  width: actualWhiteKeyWidth,
+                  height: widget.height - 4,
+                  child: _WhiteKey(
+                    label: key.label!,
+                    isExpected: key.isExpected,
+                    isPressed: key.isPressed,
+                  ),
+                );
+              }).toList(),
             ),
-          ),
-        );
-      },
+
+            // 黑键层
+            ..._buildBlackKeys(blackKeys, whiteKeys, actualWhiteKeyWidth, blackKeyWidth),
+          ],
+        ),
+      ),
     );
   }
 
