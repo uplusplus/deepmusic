@@ -385,7 +385,7 @@ class _PracticePageState extends ConsumerState<PracticePage> {
         ),
         // 下: 键盘左 + 当前音符/控制右
         Container(
-          height: 140,
+          height: 200,
           decoration: BoxDecoration(
             border: Border(top: BorderSide(color: AppColors.divider)),
           ),
@@ -395,19 +395,23 @@ class _PracticePageState extends ConsumerState<PracticePage> {
               Expanded(
                 child: PianoKeyboard(
                   expectedPitches: _follower?.getCurrentExpectedGroup()?.expectedPitchNumbers ?? {},
-                  height: 140,
+                  height: 200,
                 ),
               ),
               // 右侧: 当前音符 + 控制面板
               Container(
-                width: 280,
+                width: 300,
                 decoration: BoxDecoration(
                   border: Border(left: BorderSide(color: AppColors.divider)),
                 ),
                 child: Column(
                   children: [
                     _buildCurrentNoteBar(),
-                    Expanded(child: _buildControlPanel()),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: _buildControlPanel(),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -631,9 +635,11 @@ class _PracticePageState extends ConsumerState<PracticePage> {
     final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Container(
-      padding: EdgeInsets.all(isLandscape ? 8 : 12),
+      padding: EdgeInsets.all(isLandscape ? 6 : 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // 统计行
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -648,21 +654,35 @@ class _PracticePageState extends ConsumerState<PracticePage> {
               _buildStatItem('完成', '${(completion * 100).toInt()}%', AppColors.info),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: isLandscape ? 4 : 12),
           // 循环控制栏
           _buildLoopControls(),
-          const SizedBox(height: 8),
+          SizedBox(height: isLandscape ? 2 : 8),
+          // 操作按钮
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               IconButton(
                 icon: const Icon(Icons.skip_previous),
                 onPressed: _follower != null ? () => _follower!.jumpToMeasure(1) : null,
-                iconSize: 28,
+                iconSize: isLandscape ? 22 : 28,
+                padding: EdgeInsets.all(isLandscape ? 4 : 8),
+                constraints: isLandscape ? const BoxConstraints(minWidth: 32, minHeight: 32) : null,
               ),
               _buildMainButton(),
-              IconButton(icon: const Icon(Icons.replay), onPressed: _resetPractice, iconSize: 28),
+              IconButton(
+                icon: const Icon(Icons.replay),
+                onPressed: _resetPractice,
+                iconSize: isLandscape ? 22 : 28,
+                padding: EdgeInsets.all(isLandscape ? 4 : 8),
+                constraints: isLandscape ? const BoxConstraints(minWidth: 32, minHeight: 32) : null,
+              ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
           ),
         ],
       ),
