@@ -683,11 +683,6 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       ),
     );
   }
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildMainButton() {
     switch (_state) {
