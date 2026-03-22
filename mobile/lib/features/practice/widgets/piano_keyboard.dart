@@ -94,7 +94,7 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
         // 最多能放几个白键
         final maxWhiteKeys = (availableWidth / minWhiteKeyWidth).floor();
         // 白键数量 = 八度数 × 7
-        int octaves = (maxWhiteKeys / 7).clamp(2, 5);
+        int octaves = (maxWhiteKeys ~/ 7).clamp(2, 5);
         final totalWhiteKeys = octaves * 7;
         final noteRange = octaves * 12;
         // 实际白键宽度
