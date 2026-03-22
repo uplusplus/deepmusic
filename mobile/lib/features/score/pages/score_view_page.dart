@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
 import '../../../data/providers/score_provider.dart';
 import '../../../data/repositories/score_repository.dart';
 import '../../midi/services/midi_service.dart';
+import '../../practice/services/volume_service.dart';
 import '../../settings/services/app_settings.dart';
 import '../services/musicxml_parser.dart';
 import '../widgets/score_renderer.dart';
 import '../../practice/services/auto_player.dart';
+import '../../practice/services/audio_synth_service.dart';
 import '../../practice/widgets/piano_keyboard.dart';
 
 class ScoreViewPage extends ConsumerStatefulWidget {
@@ -25,7 +28,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   final ScoreRepository _scoreRepo = ScoreRepository();
   bool _isFavorite = false;
   bool _isFavoriteLoading = false;
-
   // 当前乐谱 ID（支持切换）
   late String _currentScoreId;
 
@@ -53,12 +55,19 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   // 键盘显示控制
   late bool _showKeyboard;
 
+  // 切谱过渡：loading 遮罩
+  bool _showLoadingOverlay = false;
+  // 缓存乐谱数据，切换时保持界面不闪
+  ScoreModel? _lastScore;
+
   // 变速选项
   static const _rateOptions = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
-  // MIDI 音量 (0-127)
+  // 音量控制
   final MidiService _midiService = MidiService();
-  double _midiVolume = 100;
+  final VolumeService _volumeService = VolumeService();
+  final AudioSynthService _audioSynth = AudioSynthService();
+  StreamSubscription<double>? _volumeSub;
 
   @override
   void initState() {
@@ -72,10 +81,51 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
       _isLoadingXml = false;
     }
     _loadScoreXml();
+
+    // 监听音量变化（外部来源，如硬件音量键）
+    _volumeSub = _volumeService.volumeStream.listen((v) {
+      if (mounted) setState(() {});
+      // 同步到合成器增益
+      if (!_volumeService.isMidiMode) {
+        _audioSynth.volume = v;
+      }
+    });
+    // 初始化合成器音量
+    if (!_volumeService.isMidiMode) {
+      _audioSynth.volume = _volumeService.localVolume;
+    }
+
+    // 监听硬件音量键
+    _initHardwareVolumeListener();
+  }
+
+  /// 监听硬件音量键
+  void _initHardwareVolumeListener() {
+    // 通过 RawKeyboardListener 拦截 Android/iOS 音量键
+    // Android: VolumeUp = 0xA4, VolumeDown = 0xA5
+    // 实际使用 ServicesBinding 的 key event handler
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+
+    // Android 音量键: volumeUp/volumeDown
+    if (event.logicalKey == LogicalKeyboardKey.audioVolumeUp) {
+      _volumeService.adjustVolume(0.05);
+      return true; // 消费事件，阻止系统音量弹窗
+    }
+    if (event.logicalKey == LogicalKeyboardKey.audioVolumeDown) {
+      _volumeService.adjustVolume(-0.05);
+      return true;
+    }
+    return false;
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    _volumeSub?.cancel();
     _playStateSub?.cancel();
     _measureSub?.cancel();
     _noteSub?.cancel();
@@ -169,7 +219,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
           await Future.delayed(Duration(milliseconds: 500 * attempt));
           continue;
         }
-        // 最后一次也失败了
         if (mounted) {
           setState(() {
             _xmlError = e.toString();
@@ -183,13 +232,14 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   /// 切换到另一首乐谱
   void _switchScore(ScoreModel newScore) {
     if (newScore.id == _currentScoreId) return;
+    debugPrint('[ScoreView] _switchScore: ${newScore.id}');
 
     // 停止当前播放
     _autoPlayer?.stop();
 
     setState(() {
       _currentScoreId = newScore.id;
-      _xmlContent = null;
+      _showLoadingOverlay = true;  // 显示遮罩覆盖旧内容，WebView 保持存活
       _highlightMeasure = 1;
       _playState = AutoPlayState.initial();
       _isFavorite = false;
@@ -268,6 +318,16 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   Widget build(BuildContext context) {
     final scoreAsync = ref.watch(scoreDetailProvider(_currentScoreId));
 
+    // 缓存乐谱数据
+    if (scoreAsync.hasValue) {
+      _lastScore = scoreAsync.requireValue;
+    }
+
+    // loading/error 时用缓存的乐谱数据保持界面不闪
+    if (!scoreAsync.hasValue && _lastScore != null) {
+      return _buildScoreView(_lastScore!);
+    }
+
     return scoreAsync.when(
       data: (score) => _buildScoreView(score),
       loading: () => Scaffold(
@@ -315,6 +375,22 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
               size: 22,
             ),
             onPressed: _isFavoriteLoading ? null : _toggleFavorite,
+          ),
+          // 练习按钮
+          TextButton.icon(
+            onPressed: () {
+              _autoPlayer?.stop();
+              Navigator.of(context).pushNamed(
+                AppRouter.practice,
+                arguments: {'scoreId': score.id},
+              );
+            },
+            icon: const Icon(Icons.piano, size: 18),
+            label: const Text('练习', style: TextStyle(fontSize: 14)),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
           ),
           const SizedBox(width: 4),
         ],
@@ -402,69 +478,12 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   // 乐谱列表组件
   // ═══════════════════════════════════════
 
-  /// 横屏侧栏内嵌乐谱列表
+  /// 横屏侧栏内嵌乐谱列表 — GlobalKey 保证父级 setState 时不销毁 State
   Widget _buildScoreListEmbedded() {
-    final scoresAsync = ref.watch(scoreListProvider(const ScoreListParams(limit: 100)));
-
-    return scoresAsync.when(
-      data: (result) {
-        if (result.scores.isEmpty) {
-          return const Center(
-            child: Text('暂无乐谱', style: TextStyle(color: Colors.grey, fontSize: 13)),
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: [
-                  Icon(Icons.queue_music, size: 16, color: Colors.grey[600]),
-                  const SizedBox(width: 6),
-                  Text(
-                    '乐谱列表',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${result.total}首',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView.builder(
-                itemCount: result.scores.length,
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                itemBuilder: (context, index) {
-                  final item = result.scores[index];
-                  return _buildScoreListItem(item, compact: true);
-                },
-              ),
-            ),
-          ],
-        );
-      },
-      loading: () => const Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-      error: (error, _) => Center(
-        child: Text(
-          '加载失败',
-          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-        ),
-      ),
+    return _EmbeddedScoreList(
+      key: const ValueKey('embedded_score_list'),
+      currentScoreId: _currentScoreId,
+      onScoreTap: _switchScore,
     );
   }
 
@@ -477,148 +496,14 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          minChildSize: 0.3,
-          maxChildSize: 0.85,
-          expand: false,
-          builder: (context, scrollController) {
-            return Column(
-              children: [
-                // 拖拽手柄
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                // 标题
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: Row(
-                    children: [
-                      const Text(
-                        '乐谱列表',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
-                      const Spacer(),
-                      Consumer(
-                        builder: (context, ref, _) {
-                          final scoresAsync = ref.watch(
-                            scoreListProvider(const ScoreListParams(limit: 100)),
-                          );
-                          return scoresAsync.when(
-                            data: (result) => Text(
-                              '${result.total}首',
-                              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-                            ),
-                            loading: () => const SizedBox.shrink(),
-                            error: (_, __) => const SizedBox.shrink(),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                // 列表
-                Expanded(
-                  child: Consumer(
-                    builder: (context, ref, _) {
-                      final scoresAsync = ref.watch(
-                        scoreListProvider(const ScoreListParams(limit: 100)),
-                      );
-
-                      return scoresAsync.when(
-                        data: (result) {
-                          if (result.scores.isEmpty) {
-                            return const Center(
-                              child: Text('暂无乐谱'),
-                            );
-                          }
-                          return ListView.builder(
-                            controller: scrollController,
-                            itemCount: result.scores.length,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            itemBuilder: (context, index) {
-                              final item = result.scores[index];
-                              return _buildScoreListItem(
-                                item,
-                                compact: false,
-                                onTap: () {
-                                  _switchScore(item);
-                                  Navigator.of(sheetContext).pop();
-                                },
-                              );
-                            },
-                          );
-                        },
-                        loading: () => const Center(
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        error: (error, _) => Center(
-                          child: Text('加载失败: $error'),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
+        return _ScoreListSheetContent(
+          currentScoreId: _currentScoreId,
+          onScoreTap: (score) {
+            _switchScore(score);
+            // 不关闭抽屉，用户可以继续滚动和切换
           },
         );
       },
-    );
-  }
-
-  /// 乐谱列表项
-  Widget _buildScoreListItem(ScoreModel item, {required bool compact, VoidCallback? onTap}) {
-    final isActive = item.id == _currentScoreId;
-
-    return ListTile(
-      dense: compact,
-      contentPadding: compact
-          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 0)
-          : const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Container(
-        width: compact ? 28 : 36,
-        height: compact ? 28 : 36,
-        decoration: BoxDecoration(
-          color: isActive
-              ? AppColors.primary.withOpacity(0.12)
-              : Colors.grey[100],
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Icon(
-          Icons.music_note,
-          size: compact ? 16 : 20,
-          color: isActive ? AppColors.primary : Colors.grey[500],
-        ),
-      ),
-      title: Text(
-        item.title,
-        style: TextStyle(
-          fontSize: compact ? 13 : 14,
-          fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-          color: isActive ? AppColors.primary : null,
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        item.composer,
-        style: TextStyle(fontSize: compact ? 11 : 12, color: Colors.grey[500]),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: isActive
-          ? Icon(Icons.play_circle, size: compact ? 18 : 22, color: AppColors.primary)
-          : null,
-      selected: isActive,
-      onTap: onTap ?? () => _switchScore(item),
     );
   }
 
@@ -829,8 +714,8 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
               child: Row(
                 children: [
                   Icon(
-                    _midiVolume == 0 ? Icons.volume_off
-                        : _midiVolume < 64 ? Icons.volume_down
+                    _volumeService.volume == 0 ? Icons.volume_off
+                        : _volumeService.volume < 0.5 ? Icons.volume_down
                         : Icons.volume_up,
                     size: 18,
                     color: Colors.grey[600],
@@ -847,25 +732,49 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
                         thumbColor: AppColors.primary,
                       ),
                       child: Slider(
-                        value: _midiVolume,
+                        value: _volumeService.volume,
                         min: 0,
-                        max: 127,
+                        max: 1.0,
                         onChanged: (v) {
-                          setState(() => _midiVolume = v);
-                          if (_midiService.connectedDevice != null) {
-                            _midiService.sendControlChange(7, v.round());
+                          _volumeService.setVolume(v);
+                          // 本机模式: 同步合成器增益
+                          if (!_volumeService.isMidiMode) {
+                            _audioSynth.volume = v;
                           }
                         },
                       ),
                     ),
                   ),
                   SizedBox(
-                    width: 36,
+                    width: 40,
                     child: Text(
-                      '${_midiVolume.round()}',
+                      _volumeService.isMidiMode
+                          ? '${_volumeService.midiVolumeCc}'
+                          : '${(_volumeService.localVolume * 100).round()}%',
                       style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       textAlign: TextAlign.right,
                     ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── 输出模式指示 ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(
+                    _volumeService.isMidiMode ? Icons.piano : Icons.speaker,
+                    size: 14,
+                    color: Colors.grey[500],
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _volumeService.isMidiMode
+                        ? 'MIDI音量 (${_midiService.connectedDevice?.name ?? "未连接"})'
+                        : '本机音量',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                   ),
                 ],
               ),
@@ -930,30 +839,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
                   ),
                   const SizedBox(width: 12),
                   const Spacer(),
-                  // 开始练习按钮
-                  SizedBox(
-                    height: 32,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        _autoPlayer?.stop();
-                        Navigator.of(context).pushNamed(
-                          AppRouter.practice,
-                          arguments: {'scoreId': score.id},
-                        );
-                      },
-                      icon: const Icon(Icons.piano, size: 16),
-                      label: const Text('练习', style: TextStyle(fontSize: 13)),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -990,7 +875,26 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   }
 
   Widget _buildScoreRenderer() {
-    if (_isLoadingXml) {
+    // 首次加载，还没有 XML → 显示加载指示器
+    if (_xmlContent == null || _xmlContent!.isEmpty) {
+      if (_xmlError != null) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+              const SizedBox(height: 12),
+              Text(_xmlError!, style: const TextStyle(color: AppColors.error)),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _loadScoreXml,
+                icon: const Icon(Icons.refresh),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
+        );
+      }
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1003,43 +907,51 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
       );
     }
 
-    if (_xmlError != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, size: 48, color: AppColors.error),
-            const SizedBox(height: 12),
-            Text(_xmlError!, style: const TextStyle(color: AppColors.error)),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _loadScoreXml,
-              icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
-            ),
-          ],
+    // 有 XML → 始终显示 ScoreRenderer（WebView 保持存活）
+    // 切换乐谱时叠加 loading overlay，渲染完消失
+    return Stack(
+      children: [
+        Container(
+          color: Colors.white,
+          child: ScoreRenderer(
+            musicXml: _xmlContent!,
+            highlightMeasure: _highlightMeasure,
+            onRendered: (info) {
+              debugPrint('Score rendered: $info');
+              if (mounted) {
+                setState(() {
+                  _isLoadingXml = false;
+                  _showLoadingOverlay = false;
+                });
+              }
+            },
+            onError: (error) {
+              debugPrint('Score render error: $error');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('渲染错误: $error')),
+              );
+            },
+          ),
         ),
-      );
-    }
 
-    if (_xmlContent == null || _xmlContent!.isEmpty) {
-      return const Center(
-        child: Text('乐谱文件为空', style: TextStyle(color: Colors.grey)),
-      );
-    }
-
-    return ScoreRenderer(
-      musicXml: _xmlContent!,
-      highlightMeasure: _highlightMeasure,
-      onRendered: (info) {
-        debugPrint('Score rendered: $info');
-      },
-      onError: (error) {
-        debugPrint('Score render error: $error');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('渲染错误: $error')),
-        );
-      },
+        // 切换乐谱时的加载遮罩（盖住旧内容，等新内容渲染完再淡出）
+        if (_showLoadingOverlay)
+          Positioned.fill(
+            child: Container(
+              color: Colors.white,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(height: 12),
+                    Text('加载乐谱中...', style: TextStyle(color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1047,5 +959,294 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
     final m = d.inMinutes.remainder(60).toString().padLeft(1, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+}
+
+/// 横屏侧栏乐谱列表
+/// GlobalKey 键控 ListView，父级 setState 时复用同一 State，滚动位置自然保持
+class _EmbeddedScoreList extends ConsumerStatefulWidget {
+  final String currentScoreId;
+  final void Function(ScoreModel) onScoreTap;
+
+  const _EmbeddedScoreList({
+    super.key,
+    required this.currentScoreId,
+    required this.onScoreTap,
+  });
+
+  @override
+  ConsumerState<_EmbeddedScoreList> createState() => _EmbeddedScoreListState();
+}
+
+class _EmbeddedScoreListState extends ConsumerState<_EmbeddedScoreList> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scoresAsync = ref.watch(scoreListProvider(const ScoreListParams(limit: 100)));
+
+    return scoresAsync.when(
+      data: (result) {
+        if (result.scores.isEmpty) {
+          return const Center(
+            child: Text('暂无乐谱', style: TextStyle(color: Colors.grey, fontSize: 13)),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.queue_music, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Text(
+                    '乐谱列表',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${result.total}首',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: _scrollController,
+                itemCount: result.scores.length,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemBuilder: (context, index) {
+                  final item = result.scores[index];
+                  final isActive = item.id == widget.currentScoreId;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    leading: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? AppColors.primary.withOpacity(0.12)
+                            : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(
+                        Icons.music_note,
+                        size: 16,
+                        color: isActive ? AppColors.primary : Colors.grey[500],
+                      ),
+                    ),
+                    title: Text(
+                      item.title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                        color: isActive ? AppColors.primary : null,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      item.composer,
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: isActive
+                        ? Icon(Icons.play_circle, size: 18, color: AppColors.primary)
+                        : null,
+                    selected: isActive,
+                    onTap: () => widget.onScoreTap(item),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+      loading: () => const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+      error: (error, _) => Center(
+        child: Text(
+          '加载失败',
+          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+        ),
+      ),
+    );
+  }
+}
+
+/// 竖屏底部抽屉乐谱列表 — 独立 widget
+/// 父级 setState 不会重建此 widget；点击乐谱不关闭抽屉
+class _ScoreListSheetContent extends ConsumerStatefulWidget {
+  final String currentScoreId;
+  final void Function(ScoreModel) onScoreTap;
+
+  const _ScoreListSheetContent({
+    required this.currentScoreId,
+    required this.onScoreTap,
+  });
+
+  @override
+  ConsumerState<_ScoreListSheetContent> createState() => _ScoreListSheetContentState();
+}
+
+class _ScoreListSheetContentState extends ConsumerState<_ScoreListSheetContent> {
+  String _activeScoreId = '';
+  final _listKey = GlobalKey(debugLabel: 'sheet_score_list');
+
+  @override
+  void initState() {
+    super.initState();
+    _activeScoreId = widget.currentScoreId;
+  }
+
+  @override
+  void didUpdateWidget(_ScoreListSheetContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.currentScoreId != oldWidget.currentScoreId) {
+      setState(() => _activeScoreId = widget.currentScoreId);
+    }
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scoresAsync = ref.watch(scoreListProvider(const ScoreListParams(limit: 100)));
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (context, _) {
+        return Column(
+          children: [
+            // 拖拽手柄
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // 标题
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  const Text(
+                    '乐谱列表',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const Spacer(),
+                  scoresAsync.when(
+                    data: (result) => Text(
+                      '${result.total}首',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                    ),
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // 列表
+            Expanded(
+              child: scoresAsync.when(
+                data: (result) {
+                  if (result.scores.isEmpty) {
+                    return const Center(child: Text('暂无乐谱'));
+                  }
+                  return ListView.builder(
+                    key: _listKey,
+                    itemCount: result.scores.length,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemBuilder: (context, index) {
+                      final item = result.scores[index];
+                      final isActive = item.id == _activeScoreId;
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                        leading: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: isActive
+                                ? AppColors.primary.withOpacity(0.12)
+                                : Colors.grey[100],
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Icon(
+                            Icons.music_note,
+                            size: 20,
+                            color: isActive ? AppColors.primary : Colors.grey[500],
+                          ),
+                        ),
+                        title: Text(
+                          item.title,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                            color: isActive ? AppColors.primary : null,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          item.composer,
+                          style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: isActive
+                            ? Icon(Icons.play_circle, size: 22, color: AppColors.primary)
+                            : null,
+                        selected: isActive,
+                        onTap: () {
+                          setState(() => _activeScoreId = item.id);
+                          widget.onScoreTap(item);
+                        },
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                error: (error, _) => Center(
+                  child: Text('加载失败: $error'),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
