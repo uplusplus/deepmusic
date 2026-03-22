@@ -5,10 +5,12 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
 import '../../../data/providers/score_provider.dart';
 import '../../../data/repositories/score_repository.dart';
+import '../../settings/services/app_settings.dart';
 import '../models/score.dart';
 import '../services/musicxml_parser.dart';
 import '../widgets/score_renderer.dart';
 import '../../practice/services/auto_player.dart';
+import '../../practice/widgets/piano_keyboard.dart';
 
 class ScoreViewPage extends ConsumerStatefulWidget {
   final String scoreId;
@@ -37,9 +39,13 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   AutoPlayState _playState = AutoPlayState.initial();
   double _playbackRate = 1.0;
 
+  // 键盘显示控制
+  late bool _showKeyboard;
+
   @override
   void initState() {
     super.initState();
+    _showKeyboard = AppSettings().showKeyboardDefault;
     _loadScoreXml();
   }
 
@@ -217,6 +223,12 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
         _buildScoreStatsBar(score),
         Expanded(child: _buildScoreRenderer()),
         _buildPlaybackBar(score),
+        // 虚拟键盘 (播放时显示)
+        if (_playState.isPlaying && _showKeyboard)
+          PianoKeyboard(
+            expectedPitches: const {},
+            height: 100,
+          ),
         // 开始练习按钮
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -256,6 +268,12 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
           child: Column(
             children: [
               Expanded(child: _buildScoreRenderer()),
+              // 虚拟键盘 (播放时显示，横屏紧凑模式)
+              if (_playState.isPlaying && _showKeyboard)
+                PianoKeyboard(
+                  expectedPitches: const {},
+                  height: 80,
+                ),
             ],
           ),
         ),
@@ -424,6 +442,18 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
                   ],
                 ),
               ),
+
+              // 键盘显示切换
+              if (_playState.isPlaying)
+                IconButton(
+                  icon: Icon(
+                    _showKeyboard ? Icons.keyboard : Icons.keyboard_hide,
+                    size: 22,
+                    color: _showKeyboard ? AppColors.primary : Colors.grey,
+                  ),
+                  tooltip: _showKeyboard ? '隐藏键盘' : '显示键盘',
+                  onPressed: () => setState(() => _showKeyboard = !_showKeyboard),
+                ),
 
               // 变速控制
               Container(
