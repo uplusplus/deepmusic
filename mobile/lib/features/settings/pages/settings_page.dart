@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../services/app_settings.dart';
+import '../../practice/services/volume_service.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -90,6 +91,8 @@ class _SettingsPageState extends State<SettingsPage> {
             setState(() {
               _settings.setAudioOutputMode(selected.first);
             });
+            // 通知音量服务切换模式
+            VolumeService().onOutputModeChanged();
           }
         },
         showSelectedIcon: false,

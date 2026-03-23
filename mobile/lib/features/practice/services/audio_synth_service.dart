@@ -33,7 +33,19 @@ class AudioSynthService {
   // 预分配的 PCM 数据缓冲区，避免每次 feed 都 new ByteData
   PcmArrayInt16? _pcmBuf;
 
+  // 音量增益 (0.0-1.0)，在 PCM 渲染时应用
+  double _volume = 1.0;
+
   bool get isInitialized => _isInitialized;
+
+  /// 当前音量增益 (0.0-1.0)
+  double get volume => _volume;
+
+  /// 设置音量增益 (0.0-1.0)
+  /// 在 PCM 渲染阶段直接缩放采样值
+  set volume(double v) {
+    _volume = v.clamp(0.0, 1.0);
+  }
 
   /// 初始化合成器
   ///
@@ -99,16 +111,18 @@ class AudioSynthService {
       // 渲染一个 block 的 mono PCM
       _synth!.renderMonoInt16(_renderBuf!);
 
-      // 🔑 使用 ByteData.view() 直接引用源内存，零拷贝
-      // ArrayInt16.bytes 是 Int16List，底层是 ByteBuffer
-      // 直接创建视图引用同一块内存，不做逐字节复制
-      final srcBytes = _renderBuf!.bytes;
-      final byteData = ByteData.view(
-        srcBytes.buffer,
-        srcBytes.offsetInBytes,
-        srcBytes.lengthInBytes,
-      );
-      await FlutterPcmSound.feed(PcmArrayInt16(bytes: byteData));
+      // 应用音量增益（在采样层面缩放）
+      // ArrayInt16.bytes 是 ByteData，用 ArrayInt16 的 [] / []= 操作符读写
+      if (_volume < 1.0) {
+        for (int i = 0; i < _blockSize; i++) {
+          final sample = _renderBuf![i]; // 通过 ArrayInt16.operator[] 读取
+          _renderBuf![i] = (sample * _volume).round().clamp(-32768, 32767);
+        }
+      }
+
+      // 🔑 直接引用 ByteData 内存，零拷贝传给 PcmArrayInt16
+      final srcBytes = _renderBuf!.bytes; // ByteData
+      await FlutterPcmSound.feed(PcmArrayInt16(bytes: srcBytes));
     }
   }
 

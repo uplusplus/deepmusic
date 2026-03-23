@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../services/midi_service.dart';
+import '../../practice/services/volume_service.dart';
 
 class DeviceListPage extends ConsumerStatefulWidget {
   const DeviceListPage({super.key});
@@ -68,7 +69,11 @@ class _DeviceListPageState extends ConsumerState<DeviceListPage> {
             duration: Duration(seconds: success ? 2 : 4),
           ),
         );
-        if (success) Navigator.pop(context);
+        if (success) {
+          // 通知音量服务发送当前 MIDI 音量
+          VolumeService().onMidiDeviceConnected();
+          Navigator.pop(context);
+        }
       }
     } finally {
       if (mounted) setState(() => _isConnecting = false);

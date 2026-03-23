@@ -195,6 +195,90 @@ class MusicXmlParser {
   ) {
     final parts = <Part>[];
 
+    // ── 第一遍：解析第一个声部，建立参考时间轴 ──
+    // 多声部曲目各声部应共享同一 tempo 和时间轴
+    final refMeasureStartMs = <int, int>{}; // {measureNumber: absoluteMs}
+    final refTempo = <int, int>{}; // {measureNumber: startTempo}
+    {
+      int rDivs = 4;
+      TimeSignature rTs = TimeSignature.common;
+      int rTempo = 120;
+      int rCumMs = 0;
+      final firstPart = scoreElement.findElements('part').firstOrNull;
+      if (firstPart != null) {
+        for (final mEl in firstPart.findElements('measure')) {
+          final mNum = int.tryParse(mEl.getAttribute('number') ?? '') ?? 0;
+          final a = mEl.getElement('attributes');
+          if (a != null) {
+            final d = a.getElement('divisions');
+            if (d != null) rDivs = int.tryParse(d.innerText) ?? rDivs;
+            final t = a.getElement('time');
+            if (t != null) {
+              final b = int.tryParse(t.getElement('beats')?.innerText ?? '4') ?? 4;
+              final bt = int.tryParse(t.getElement('beat-type')?.innerText ?? '4') ?? 4;
+              rTs = TimeSignature(beats: b, beatType: bt);
+            }
+          }
+          final mStartTempo = rTempo;
+          refMeasureStartMs[mNum] = rCumMs;
+          refTempo[mNum] = mStartTempo;
+          // 提取 tempo 变更（支持 offset）
+          final measureStartTempoRef = rTempo;
+          final refTempoChanges = <int, int>{};
+          for (final dir in mEl.findElements('direction')) {
+            final snd = dir.getElement('sound');
+            if (snd != null) {
+              final t = snd.getAttribute('tempo');
+              if (t != null) {
+                final newT = int.tryParse(t) ?? rTempo;
+                final offsetEl = dir.getElement('offset');
+                int offsetTick = 0;
+                if (offsetEl != null) {
+                  offsetTick = int.tryParse(offsetEl.innerText) ?? 0;
+                }
+                refTempoChanges[offsetTick] = newT;
+                rTempo = newT;
+              }
+            }
+          }
+          for (final snd in mEl.findAllElements('sound')) {
+            if (snd.parent is XmlElement &&
+                (snd.parent as XmlElement).name.local == 'direction') continue;
+            final t = snd.getAttribute('tempo');
+            if (t != null) {
+              final newT = int.tryParse(t) ?? rTempo;
+              refTempoChanges[0] = newT;
+              rTempo = newT;
+            }
+          }
+
+          final tpm = (rTs.beats * 4 / rTs.beatType * rDivs).round();
+          if (refTempoChanges.isEmpty) {
+            final mpt = 60000.0 / (measureStartTempoRef * rDivs);
+            rCumMs += (tpm * mpt).round();
+          } else {
+            final sortedOffsets = refTempoChanges.keys.toList()..sort();
+            int segStart = 0;
+            int segTempo = measureStartTempoRef;
+            for (final offset in sortedOffsets) {
+              final segLen = offset - segStart;
+              if (segLen > 0) {
+                final mpt = 60000.0 / (segTempo * rDivs);
+                rCumMs += (segLen * mpt).round();
+              }
+              segStart = offset;
+              segTempo = refTempoChanges[offset]!;
+            }
+            final remaining = tpm - segStart;
+            if (remaining > 0) {
+              final mpt = 60000.0 / (segTempo * rDivs);
+              rCumMs += (remaining * mpt).round();
+            }
+          }
+        }
+      }
+    }
+
     for (final partEl in scoreElement.findElements('part')) {
       final partId = partEl.getAttribute('id') ?? 'P1';
       final partDef = partList[partId] ?? _PartDef(id: partId, name: 'Piano');
@@ -205,12 +289,15 @@ class MusicXmlParser {
       int tempo = 120;
 
       final measures = <Measure>[];
-      int cumulativeMs = 0;
 
       for (final measureEl in partEl.findElements('measure')) {
         final measureNumber =
             int.tryParse(measureEl.getAttribute('number') ?? '') ??
             (measures.length + 1);
+
+        // 使用第一个声部的时间轴（所有声部共享）
+        final int cumulativeMs = refMeasureStartMs[measureNumber] ?? 0;
+        tempo = refTempo[measureNumber] ?? tempo; // 使用参考 tempo
 
         // ── attributes (拍号/调号/divisions) ──
         final attrs = measureEl.getElement('attributes');
@@ -248,6 +335,9 @@ class MusicXmlParser {
           }
         }
         for (final sound in measureEl.findElements('sound')) {
+          // 跳过已在 direction 内处理过的 sound
+          if (sound.parent is XmlElement &&
+              (sound.parent as XmlElement).name.local == 'direction') continue;
           final t = sound.getAttribute('tempo');
           if (t != null) tempo = int.tryParse(t) ?? tempo;
         }
@@ -356,11 +446,8 @@ class MusicXmlParser {
           keySignature: keySig,
         ));
 
-        // 累计时间 — 基于当前小节的 divisions 和拍号
-        final ticksPerMeasure =
-            timeSig.beats * (4 ~/ timeSig.beatType) * divisions;
-        final msPerTick = 60000.0 / (tempo * divisions);
-        cumulativeMs += (ticksPerMeasure * msPerTick).round();
+        // 累计时间 — 使用参考时间轴，不需要本地计算
+        // (refMeasureStartMs 已由第一遍解析提供)
       }
 
       parts.add(Part(name: partDef.name, measures: measures));

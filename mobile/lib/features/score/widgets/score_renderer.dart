@@ -103,7 +103,9 @@ class _ScoreRendererState extends State<ScoreRenderer> {
             _injectCJKFont();
           },
           onWebResourceError: (error) {
-            widget.onError?.call('WebView error: ${error.description}');
+            // 静默处理 WebView 资源错误（favicon 404 等）
+            // 真正的渲染错误通过 JS channel 通知
+            debugPrint('[ScoreRenderer] WebResourceError: ${error.description}');
           },
         ),
       );
@@ -181,6 +183,9 @@ class _ScoreRendererState extends State<ScoreRenderer> {
           break;
         case 'debug_svg':
           debugPrint('[DM SVG] ${data['snippet']}');
+          break;
+        case 'jslog':
+          debugPrint('[JS ${data['level']}] ${data['message']}');
           break;
       }
     } catch (e) {

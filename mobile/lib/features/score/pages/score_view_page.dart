@@ -10,6 +10,7 @@ import '../../midi/services/midi_service.dart';
 import '../../practice/services/volume_service.dart';
 import '../../settings/services/app_settings.dart';
 import '../services/musicxml_parser.dart';
+import '../models/score.dart' show HandMode;
 import '../widgets/score_renderer.dart';
 import '../../practice/services/auto_player.dart';
 import '../../practice/services/audio_synth_service.dart';
@@ -54,6 +55,9 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
 
   // 键盘显示控制
   late bool _showKeyboard;
+
+  // 左右手模式
+  HandMode _handMode = HandMode.both;
 
   // 切谱过渡：loading 遮罩
   bool _showLoadingOverlay = false;
@@ -147,7 +151,7 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
       _noteSub?.cancel();
       _autoPlayer?.dispose();
 
-      final player = AutoPlayer(score);
+      final player = AutoPlayer(score, handMode: _handMode);
 
       // 监听播放状态
       _playStateSub = player.stateStream.listen((state) {
@@ -275,6 +279,17 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   }
 
   // ── 自动播放控制 ──
+
+  void _cycleHandMode() {
+    setState(() {
+      _handMode = switch (_handMode) {
+        HandMode.both => HandMode.rightOnly,
+        HandMode.rightOnly => HandMode.leftOnly,
+        HandMode.leftOnly => HandMode.both,
+      };
+    });
+    _autoPlayer?.setHandMode(_handMode);
+  }
 
   void _togglePlay() {
     if (_autoPlayer == null) {
@@ -638,6 +653,17 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
                     onTap: () {
                       _autoPlayer?.toggleLoop();
                     },
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 左右手切换按钮
+                  _buildCircleButton(
+                    icon: _handMode == HandMode.both ? Icons.piano
+                        : _handMode == HandMode.rightOnly ? Icons.looks_one
+                        : Icons.looks_two,
+                    size: 20,
+                    active: _handMode != HandMode.both,
+                    onTap: _cycleHandMode,
                   ),
                   const SizedBox(width: 8),
 

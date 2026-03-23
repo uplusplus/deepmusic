@@ -4,6 +4,7 @@ import '../../midi/services/midi_service.dart';
 import '../../score/models/score.dart';
 import '../../settings/services/app_settings.dart';
 import 'audio_synth_service.dart';
+import 'volume_service.dart';
 
 /// 调度的 MIDI 事件
 class ScheduledMidiEvent {
@@ -80,6 +81,7 @@ class AutoPlayer {
   final Score score;
   final MidiService _midiService = MidiService();
 
+  HandMode _handMode;
   late List<ScheduledMidiEvent> _events;
   int _eventIndex = 0;
 
@@ -142,7 +144,7 @@ class AutoPlayer {
       AppSettings().audioOutputMode == AudioOutputMode.midi &&
       _midiService.connectedDevice != null;
 
-  AutoPlayer(this.score) {
+  AutoPlayer(this.score, {HandMode handMode = HandMode.both}) : _handMode = handMode {
     _events = _buildScheduledEvents();
     if (_events.isNotEmpty) {
       _totalDurationMs = _events.last.absoluteMs;
@@ -150,6 +152,19 @@ class AutoPlayer {
     // 异步初始化内置合成器
     _initSynth();
   }
+
+  /// 切换左右手模式
+  void setHandMode(HandMode mode) {
+    if (_handMode == mode) return;
+    _handMode = mode;
+    // 重建事件列表
+    _events = _buildScheduledEvents();
+    if (_events.isNotEmpty) {
+      _totalDurationMs = _events.last.absoluteMs;
+    }
+  }
+
+  HandMode get handMode => _handMode;
 
   Future<void> _initSynth() async {
     await _audioSynth.init();
@@ -160,7 +175,12 @@ class AutoPlayer {
   /// 使用解析器已计算的 startMs 和 durationMs（已按各小节 tempo 正确处理变速）
   List<ScheduledMidiEvent> _buildScheduledEvents() {
     final events = <ScheduledMidiEvent>[];
-    final notes = score.allNotes;
+    // 根据左右手模式过滤音符
+    final notes = switch (_handMode) {
+      HandMode.both => score.allNotes,
+      HandMode.rightOnly => score.rightHandNotes,
+      HandMode.leftOnly => score.leftHandNotes,
+    };
 
     for (final note in notes) {
       // Note On — 使用乐谱中的 velocity
@@ -196,9 +216,8 @@ class AutoPlayer {
       // 恢复播放
       _isPaused = false;
       _stopwatch.start();
-      if (!_useMidiOutput) {
-        _audioSynth.resume();
-      }
+      // 始终管理 synth 生命周期，MIDI 模式下 synth 静音但保持运行
+      _audioSynth.resume();
     } else {
       // 新播放
       _eventIndex = _findStartIndex(fromMeasure);
@@ -207,9 +226,8 @@ class AutoPlayer {
       _lastStateEmitMs = 0;
       _stopwatch.reset();
       _stopwatch.start();
-      if (!_useMidiOutput) {
-        _audioSynth.resume();
-      }
+      // 始终管理 synth 生命周期，MIDI 模式下 synth 静音但保持运行
+      _audioSynth.resume();
     }
 
     _isPlaying = true;
@@ -231,9 +249,8 @@ class AutoPlayer {
 
     // 发送所有活跃音符的 noteOff
     _allNotesOff();
-    if (!_useMidiOutput) {
-      _audioSynth.pause();
-    }
+    // 始终管理 synth 生命周期
+    _audioSynth.pause();
   }
 
   /// 停止
@@ -393,6 +410,14 @@ class AutoPlayer {
     // lookahead 确保 Timer jitter 不会导致事件延迟播放
     final isMidiMode = _useMidiOutput;
 
+    // MIDI 模式下 synth 静音（保持 feed 循环运行），本地模式恢复音量
+    if (isMidiMode) {
+      _audioSynth.volume = 0;
+    } else {
+      final vol = VolumeService().localVolume;
+      if (_audioSynth.volume != vol) _audioSynth.volume = vol;
+    }
+
     while (_eventIndex < _events.length) {
       final event = _events[_eventIndex];
 
@@ -403,16 +428,15 @@ class AutoPlayer {
       if (event.isNoteOn) {
         if (isMidiMode) {
           _midiService.sendNoteOn(event.noteNumber, event.velocity);
-        } else {
-          _audioSynth.noteOn(event.noteNumber, event.velocity);
         }
+        // 始终喂 synth（MIDI 模式 volume=0 静音，feed 循环保持活跃）
+        _audioSynth.noteOn(event.noteNumber, event.velocity);
         _noteController.add(PlayingNoteEvent(noteNumber: event.noteNumber, isOn: true));
       } else {
         if (isMidiMode) {
           _midiService.sendNoteOff(event.noteNumber);
-        } else {
-          _audioSynth.noteOff(event.noteNumber);
         }
+        _audioSynth.noteOff(event.noteNumber);
         _noteController.add(PlayingNoteEvent(noteNumber: event.noteNumber, isOn: false));
       }
 
@@ -456,9 +480,9 @@ class AutoPlayer {
       for (int note = 0; note < 128; note++) {
         _midiService.sendNoteOff(note);
       }
-    } else {
-      _audioSynth.allNotesOff();
     }
+    // 始终清理 synth，防止残留音符
+    _audioSynth.allNotesOff();
   }
 
   void _emitState() {

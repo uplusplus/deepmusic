@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/repositories/score_repository.dart';
@@ -10,6 +11,8 @@ import '../../score/widgets/score_renderer.dart';
 import '../models/note_event.dart';
 import '../services/score_follower.dart';
 import '../services/note_evaluator.dart';
+import '../services/volume_service.dart';
+import '../services/audio_synth_service.dart';
 import '../widgets/piano_keyboard.dart';
 
 enum PracticeState { idle, ready, playing, paused, completed }
@@ -63,11 +66,17 @@ class _PracticePageState extends ConsumerState<PracticePage> {
   int _loopCycle = 0;
   double? _loopBestScore;
 
+  // 音量控制
+  final VolumeService _volumeService = VolumeService();
+  final AudioSynthService _audioSynth = AudioSynthService();
+  StreamSubscription<double>? _volumeSub;
+
   @override
   void initState() {
     super.initState();
     _initMidiConnection();
     _loadScoreXml();
+    _initVolume();
 
     // 兜底：首帧后再检查一次连接状态（防止 stream 竞争导致同步检查遗漏）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -86,6 +95,35 @@ class _PracticePageState extends ConsumerState<PracticePage> {
         });
       }
     });
+  }
+
+  void _initVolume() {
+    // 同步合成器音量
+    if (!_volumeService.isMidiMode) {
+      _audioSynth.volume = _volumeService.localVolume;
+    }
+    // 监听外部音量变化
+    _volumeSub = _volumeService.volumeStream.listen((v) {
+      if (mounted) setState(() {});
+      if (!_volumeService.isMidiMode) {
+        _audioSynth.volume = v;
+      }
+    });
+    // 监听硬件音量键
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+    if (event.logicalKey == LogicalKeyboardKey.audioVolumeUp) {
+      _volumeService.adjustVolume(0.05);
+      return true;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.audioVolumeDown) {
+      _volumeService.adjustVolume(-0.05);
+      return true;
+    }
+    return false;
   }
 
   void _initMidiConnection() {
@@ -353,6 +391,8 @@ class _PracticePageState extends ConsumerState<PracticePage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
+    _volumeSub?.cancel();
     _midiSub?.cancel();
     _progressSub?.cancel();
     _connectionSub?.cancel();
@@ -660,6 +700,9 @@ class _PracticePageState extends ConsumerState<PracticePage> {
             ],
           ),
           SizedBox(height: isLandscape ? 4 : 12),
+          // 音量控制
+          _buildVolumeSlider(isLandscape),
+          SizedBox(height: isLandscape ? 4 : 12),
           // 循环控制栏
           _buildLoopControls(),
           SizedBox(height: isLandscape ? 2 : 8),
@@ -742,6 +785,57 @@ class _PracticePageState extends ConsumerState<PracticePage> {
       Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
       Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 10)),
     ]);
+  }
+
+  Widget _buildVolumeSlider(bool compact) {
+    final isMidi = _volumeService.isMidiMode;
+    final volume = _volumeService.volume;
+
+    return Row(
+      children: [
+        Icon(
+          volume == 0 ? Icons.volume_off
+              : volume < 0.5 ? Icons.volume_down
+              : Icons.volume_up,
+          size: 16,
+          color: Colors.grey[600],
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+              activeTrackColor: AppColors.primary,
+              inactiveTrackColor: Colors.grey[200],
+              thumbColor: AppColors.primary,
+            ),
+            child: Slider(
+              value: volume,
+              min: 0,
+              max: 1.0,
+              onChanged: (v) {
+                _volumeService.setVolume(v);
+                if (!isMidi) {
+                  _audioSynth.volume = v;
+                }
+              },
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 50,
+          child: Text(
+            isMidi
+                ? 'MIDI ${_volumeService.midiVolumeCc}'
+                : '${(volume * 100).round()}%',
+            style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildLoopControls() {
