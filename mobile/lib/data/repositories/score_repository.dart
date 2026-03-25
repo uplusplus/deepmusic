@@ -1,7 +1,9 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import '../models/score.dart';
+import '../../features/score/models/score.dart';
 import '../../core/constants/app_colors.dart';
-import 'api_client.dart';
+import '../services/api_client.dart';
 
 class ScoreRepository {
   final ApiClient _apiClient;
@@ -89,18 +91,81 @@ class ScoreRepository {
   /// 下载乐谱文件
   Future<String> downloadScoreFile(String scoreId, String savePath) async {
     try {
-      // 先获取乐谱信息
-      final score = await getScoreById(scoreId);
-      
-      // 下载文件
       await _apiClient.dio.download(
-        '/uploads/${score.musicXmlPath.split('/').last}',
+        '/scores/$scoreId/xml',
         savePath,
       );
-      
       return savePath;
     } on DioException catch (e) {
       throw ScoreException(e.message ?? '下载乐谱失败');
+    }
+  }
+
+  /// 获取乐谱 MusicXML 内容 (用于渲染)
+  Future<String> getScoreXml(String scoreId) async {
+    try {
+      final response = await _apiClient.dio.get(
+        '/scores/$scoreId/xml',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return utf8.decode(response.data as List<int>);
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '获取乐谱文件失败');
+    }
+  }
+
+  /// 收藏乐谱
+  Future<void> favoriteScore(String scoreId) async {
+    try {
+      await _apiClient.dio.post('/scores/$scoreId/favorite');
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '收藏失败');
+    }
+  }
+
+  /// 取消收藏
+  Future<void> unfavoriteScore(String scoreId) async {
+    try {
+      await _apiClient.dio.delete('/scores/$scoreId/favorite');
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '取消收藏失败');
+    }
+  }
+
+  /// 上传乐谱文件
+  Future<ScoreModel> uploadScore({
+    required String filePath,
+    required String title,
+    required String composer,
+    String? arranger,
+    required String difficulty,
+    String? category,
+    String? source,
+    String? license,
+  }) async {
+    try {
+      final fileName = filePath.split('/').last.split(r'\').last;
+
+      final formData = FormData.fromMap({
+        'title': title,
+        'composer': composer,
+        'difficulty': difficulty,
+        if (arranger != null && arranger.isNotEmpty) 'arranger': arranger,
+        if (category != null && category.isNotEmpty) 'category': category,
+        if (source != null && source.isNotEmpty) 'source': source,
+        if (license != null && license.isNotEmpty) 'license': license,
+        'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      });
+
+      final response = await _apiClient.dio.post(
+        '/scores',
+        data: formData,
+        options: Options(headers: {'Content-Type': 'multipart/form-data'}),
+      );
+
+      return ScoreModel.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '上传乐谱失败');
     }
   }
 }

@@ -1,230 +1,369 @@
 # DeepMusic – Your Music AI Assistant
 
 > DeepMusic is redefining how humans learn music, create music, and perform music.
-> DeepMusic embodies the dual soul of a concert pianist and an elite AI engineer — a musical revolution written in code.
 
 ---
 
-## Product Overview
+## 产品概述
 
-DeepMusic is the world's first large-scale AI assistant that truly understands music.
+DeepMusic 是 AI 驱动的音乐学习助手，Phase 1 聚焦**钢琴学习**。通过蓝牙 MIDI 数字钢琴连接，提供实时乐谱跟随、练习评估和智能曲谱库。
 
-Powered by a Music Large Model, trained on millions of audio recordings, sheet music, text, and visual data, DeepMusic goes beyond sound recognition.
+### 核心功能
 
-**It understands musical intention.**
+- 🎹 **MIDI 连接** — 蓝牙 BLE + USB OTG 双连接方式，自动扫描，自动连接已知设备，统一事件流
+- 📖 **智能乐谱跟随** — 实时跟踪弹奏位置，自动翻页
+- 🎯 **练习评估** — 音准 + 节奏多维评分（S/A/B/C/D/F）
+- 🔁 **区间循环练习** — 选择任意小节区间，反复循环练习难点段落
+- ▶️ **自动播放** — 乐谱库自动播放试听，支持变速控制
+- 🎼 **曲谱库** — 30 首无版权曲谱，分类筛选
+- 👤 **用户系统** — 注册/登录、练习历史、收藏
 
-It doesn't just hear your notes — it understands your struggles, guides your progress, and practices with you like a personal music mentor.
+### 平台
 
----
-
-## Platform Support
-
-| Platform | Devices |
-|----------|---------|
-| iOS | iPhone, iPad |
-| Android | Phones, Tablets |
-| HarmonyOS | Phones, Tablets |
-
----
-
-## Core Features
-
-### 🎼 Intelligent Score Library | Search by Playing
-
-- Tens of thousands of professionally curated scores
-- Repertoire: Beyer, Czerny, Bach, Chopin to modern and pop
-- **Play to Search**: Play the melody in your mind → identify within 3 seconds
-- Instant score location from millions of sheets
-
-### 📖 Intelligent Score Following | AI That Understands You
-
-- First score-following system that understands **musical intention**, not just notes
-- Wrong note? It knows what you meant
-- Difficult passage? It stays with you
-- Jump to climax? It follows instantly
-- **AI Page Turning**: Auto-flip at the perfect moment
-
-### 🎹 AI Practice Companion | Your 24/7 Music Teacher
-
-- Real-time note recognition
-- Gentle Real-time Error Correction
-- Multi-dimensional AI Evaluation:
-  - Pitch accuracy
-  - Rhythmic stability
-  - Dynamics control
-  - Emotional expression
-  - Performance completeness
-- Distinguishes artistic rubato from instability
-
-### 🎵 Music Transcription | Preserve Every Inspiration
-
-- Improvise → Transcribe → Magic
-- Output: Complete staff score with:
-  - Precise notes
-  - Tempo detection
-  - Key analysis
-  - Slurs & articulations
-  - Subtle rubato captured
-- Export to MusicXML
-
-### 🎛️ AI Audio Tuning | One-Click Studio Sound
-
-- Noise removal
-- Pitch correction
-- Steinway-grade tone
-- Expanded dynamic range
-- From practice room to concert hall — in one click
-
-### 📤 Score Upload | Bring Old Scores to Life
-
-- Upload any file: yellowed sheets, handwritten exercises, PDFs
-- Convert to interactive digital scores
-- Every musical memory is reborn
-
-### 🎓 AI Masterclass | Play with Legends
-
-- World-class performance recordings synced to sheet music
-- Tap any bar → jump to corresponding audio
-- Dialogue with masters
+| 平台 | 状态 |
+|------|------|
+| Android | ✅ Phase 1 |
+| iOS | ✅ Phase 1 (需 macOS) |
+| HarmonyOS | ⏳ Phase 2 |
 
 ---
 
-## Development Phases
+## 技术栈
 
-### Phase 1: Cross-Platform Piano Learning App
-
-**Goal**: MVP for piano learning with Bluetooth MIDI support
-
-**Platforms**: iOS, Android, HarmonyOS
-
-**Core Features**:
-- Bluetooth MIDI connection to digital pianos
-- Real-time note recognition
-- Score following
-- Basic practice evaluation
-- Score library (curated subset)
-
-**Timeline**: TBD
-
-### Phase 2: Full Feature Rollout
-
-- Complete score library
-- AI transcription
-- Audio tuning
-- Play-to-search
-
-### Phase 3: Multi-Instrument Support
-
-- Guitar learning
-- Other instruments
+| 层级 | 技术 |
+|------|------|
+| 移动端 | Flutter 3.x + Riverpod |
+| 后端 | Express + TypeScript + Prisma |
+| 数据库 | SQLite (dev) / PostgreSQL (prod) |
+| MIDI | flutter_midi_command (BLE + USB) 统一事件分发 |
+| 音频合成 | dart_melty_soundfont (SF2) + flutter_pcm_sound (PCM 输出) |
+| 乐谱渲染 | OpenSheetMusicDisplay (WebView) |
 
 ---
 
-## Technical Requirements (Phase 1)
+## 快速开始
 
-### Bluetooth MIDI
-- iOS: Core MIDI / External Accessory Framework
-- Android: Android MIDI API (API 23+)
-- HarmonyOS: HarmonyOS MIDI API
-
-### Cross-Platform Framework
-- Options: Flutter / React Native / KMP (Kotlin Multiplatform)
-- TBD based on discussion
-
-### Audio Engine
-- Real-time pitch detection
-- Low-latency audio processing
-- Options: FMOD / AudioKit / Custom DSP
-
-### Sheet Music Rendering
-- MusicXML parsing
-- Interactive score display
-- Options: OpenSheetMusicDisplay / VexFlow / Custom
-
----
-
-## Project Structure
-
-```
-DeepMusic/
-├── README.md
-├── docs/
-│   ├── PRD.md           # Product Requirements Document
-│   ├── ARCHITECTURE.md  # Technical Architecture
-│   └── ROADMAP.md       # Development Roadmap
-├── design/
-│   └── ui/              # UI/UX designs
-├── src/
-│   ├── mobile/          # Cross-platform mobile app
-│   ├── core/            # Shared business logic
-│   └── audio/           # Audio processing engine
-└── assets/
-    └── scores/          # Sample scores for testing
-```
-
----
-
-## Project Status
-
-✅ **已完成:**
-- [x] 需求讨论与决策记录
-- [x] PRD 文档
-- [x] 技术架构设计
-- [x] 开发路线图
-- [x] Flutter 项目创建与依赖安装
-- [x] 核心模块代码框架
-- [x] Web 后端 API 开发完成
-- [x] 数据库初始化 (PostgreSQL + Redis)
-- [x] 30 首无版权乐谱数据导入
-- [x] 后端服务本地运行 (http://localhost:3000)
-- [x] Flutter Web 构建成功
-- [x] API 客户端配置完成
-- [x] Android Studio 已安装 (D:\03_Android\android-studio)
-- [x] Android SDK 已配置 (D:\03_Android\Sdk)
-- [x] 真实 MusicXML 文件上传 (致爱丽丝.xml, 小步舞曲.xml, 小星星变奏曲.xml)
-
-⏳ **进行中:**
-- [ ] 配置 Android 开发环境
-- [ ] 上传更多 MusicXML 文件
-
-📋 **待办:**
-- [ ] 配置 Flutter Android 开发环境
-- [ ] 实现蓝牙 MIDI 连接 (Yamaha P125)
-- [ ] 实现 MusicXML 解析与渲染 (OSMD)
-- [ ] 实现乐谱跟随逻辑
-- [ ] 实现音符评估算法
-- [ ] 前后端联调测试
-- [ ] 构建 Android APK
-
----
-
-## Quick Start
+### 后端
 
 ```bash
-# 安装 Flutter (如未安装)
-# Windows: https://docs.flutter.dev/get-started/install/windows
+cd server
+npm install
+cp .env.example .env
+npm run db:generate && npm run db:migrate && npm run db:seed
+npm run scores:import
+npm run dev
+# → http://localhost:3000/health
+```
 
-# 进入移动端项目
-cd DeepMusic/mobile
+### 移动端
 
-# 安装依赖
+```bash
+cd mobile
 flutter pub get
-
-# 运行应用
 flutter run
 ```
 
----
-
-## Documentation
-
-- [PRD - 产品需求文档](docs/PRD.md)
-- [ARCHITECTURE - 技术架构](docs/ARCHITECTURE.md)
-- [ROADMAP - 开发路线图](docs/ROADMAP.md)
-- [SETUP - 开发环境配置](docs/SETUP.md)
+详细配置参见 [SETUP.md](docs/SETUP.md)。
 
 ---
 
-## Contact
+## 项目结构
 
-*Project initiated: 2026-03-15*
+```
+deepmusic/
+├── docs/                  # 设计文档
+│   ├── PRD.md             # 产品需求
+│   ├── ARCHITECTURE.md    # 技术架构
+│   ├── ROADMAP.md         # 开发路线图
+│   └── SETUP.md           # 环境配置
+├── mobile/                # Flutter 移动端
+│   └── lib/
+│       ├── core/          # 基础设施 (主题/路由/常量)
+│       ├── features/      # 功能模块 (home/midi/score/practice/profile)
+│       ├── shared/        # 共享组件
+│       └── data/          # 数据层 (仓库/数据源/模型)
+├── server/                # Express 后端
+│   ├── src/
+│   │   ├── routes/        # API 路由 (auth/scores/practice/devices)
+│   │   ├── services/      # 业务逻辑
+│   │   └── middleware/    # 中间件 (验证/错误/404)
+│   └── prisma/            # 数据模型 + 迁移
+```
+
+---
+
+## 最新更新 (2026-03-24 09:00)
+
+### 📊 OSMD 渲染性能优化 (2026-03-24)
+- **性能计时体系**：渲染管线全链路 `[PERF]` 打点（Dart T0/T2 → JS T3/T4/T5/T6 → TOTAL），可精确定位瓶颈
+- **三级 XML 缓存**：内存 → 磁盘 (`getApplicationCacheDirectory/score_xml/`) → 网络，切换已缓存乐谱无需重复下载
+- **分页渲染**：每页 15 小节，长乐谱自动分页，翻页不重载 XML（跳过 parse+load，只 re-render SVG）
+- 翻页 UI：上一页/下一页按钮 + 圆点指示器 + 页码文字，竖屏/横屏均支持
+- `ScoreRenderer` 新增 `onPageControllerReady` 回调，父组件可直接调用 `renderPage(page)`
+- 初始渲染和 resize 后均返回完整分页信息（totalMeasures/page/totalPages）
+- 独立性能测试页：`benchmark.html`
+- 详见 [wiki/2026-03-24-osmd-performance-optimization.md](wiki/2026-03-24-osmd-performance-optimization.md)
+
+## 最新更新 (2026-03-22 23:00)
+
+### 🎵 乐谱列表 + 切换 (2026-03-22)
+- 播放页面新增乐谱列表：竖屏 AppBar 🎵 按钮弹出底部抽屉，横屏右侧侧栏嵌入列表
+- 点击列表项直接切换乐谱，无需返回乐谱库
+- 当前乐谱高亮显示 + play_circle 图标标识
+- `ScoreViewPage` 支持动态 `_currentScoreId`，切换时自动停止播放、重置状态、重新加载 XML
+
+### 🔶 虚拟键盘播放同步高亮 (2026-03-22)
+- AutoPlayer 新增 `noteStream`，每个音符 on/off 发射 `PlayingNoteEvent`
+- PianoKeyboard 新增 `playingNotes` 参数，播放中的音符显示橙色高亮（白键 + 黑键）
+- 优先级：用户按键(蓝) > 播放中(橙) > 应弹(浅蓝) > 普通
+- 使用版本号机制保证 CustomPainter 重绘（避免集合引用不变导致 shouldRepaint 失效）
+
+### 🔧 虚拟键盘触摸修复 (2026-03-22)
+- **问题**：播放页面虚拟键盘点击无响应
+- **根因**：键盘使用 `Expanded` 包裹导致布局挤压异常
+- **修复**：`Expanded` → 固定高度 `SizedBox`，竖屏 200px / 横屏 160px（对齐练习页面）
+
+### 🎵 音符点击 + 循环练习 (2026-03-22)
+- OSMD 乐谱支持点击音符定位播放位置
+- 重复模式：选择任意小节区间，循环播放练习难点段落
+- 播放时当前音符绿色半透明高亮跟随
+- 详见 [wiki/2026-03-22-score-list-and-keyboard.md](wiki/2026-03-22-score-list-and-keyboard.md)
+
+### 🔧 乐谱播放优化：调号/临时记号/力度/移调 (2026-03-22)
+- **调号隐含升降号**：MusicXML 解析器现在根据 `<key><fifths>` 自动为无 `<alter>` 的音符应用调号升降号
+  - 例如 G 大调（fifths=1）中的 F 自动升为 F#，Bb 大调（fifths=-2）中的 B/E 自动降半音
+- **小节内临时记号追踪**：同小节内先出现的 `#`/`b`/`♮` 会沿用给后续同音名的音符，跨小节自动重置
+- **还原记号**：`<alter>0</alter>` 显式取消调号，后续同小节同音名也恢复自然音
+- **`<accidental>` 元素**：无 `<alter>` 时从 `<accidental>sharp/flat/natural` 推导升降号
+- **力度 (Velocity)**：`Note` 模型新增 `velocity` 字段，从 `<velocity>` 或 `dynamics` 属性解析，`AutoPlayer` 使用实际力度替代硬编码 80
+- **MidiService**：新增 `sendControlChange()` 方法支持 MIDI CC（如 CC123 All Notes Off）
+- **单元测试**：30 例全部通过，覆盖音高映射、时值计算、调号处理、力度解析、和弦同步、边界条件
+- 详见 [wiki/2026-03-22-playback-pitch-rhythm.md](wiki/2026-03-22-playback-pitch-rhythm.md)
+
+### ⚙️ 应用设置页 (2026-03-22)
+- 新增设置页（「我的」→「设置」），SharedPreferences 持久化
+- **音频输出模式**：MIDI 设备输出 / 本机内置合成器，全链路生效
+  - AutoPlayer 自动播放：根据设置走 MIDI 或 SF2 合成器
+  - 虚拟键盘触摸弹奏：同上
+- **默认显示键盘**：播放乐谱时是否默认展示虚拟钢琴键盘
+  - 播放栏提供键盘切换按钮，可临时覆盖
+- 影响文件：`app_settings.dart`（新）、`settings_page.dart`（新）、`auto_player.dart`、`piano_keyboard.dart`、`score_view_page.dart`、`app_router.dart`、`profile_page.dart`、`main.dart`
+- 详见 [wiki/2026-03-22-settings-page.md](wiki/2026-03-22-settings-page.md)
+
+### 🔧 乐谱播放性能优化 (2026-03-22)
+- **问题**：自动播放卡顿、非 120 BPM 曲目音符拖尾/截断
+- **根因**（5 项）：
+  1. `_buildScheduledEvents()` 硬编码 `tempo=120`，导致 `durationMs` 与实际 tempo 不匹配
+  2. `Timer.periodic(10ms)` 固定轮询，受 GC/帧渲染影响 jitter 20-50ms
+  3. PCM 缓冲区逐字节拷贝（256 samples × 512 次调用/次），阻塞音频回调
+  4. `_emitState()` 每 10ms 触发 UI 重建（100fps），浪费 GPU
+  5. `_parseMetadata()` 未解析 `<direction><sound tempo="..."/>`，`score.tempo` 返回默认 120
+- **修复**：
+  - 使用 `score.tempo` 计算音符时长（不再硬编码 120）
+  - Timer 改为 schedule-next-event 策略（lookahead 25ms + 单次 Timer 精确调度）
+  - PCM 缓冲区使用 `ByteData.view()` 零拷贝 + 批量渲染（4 blocks/次）
+  - UI 状态更新节流至 ~33fps
+  - Parser 优先从 `<direction><sound>` 提取 tempo
+  - 微秒级 Stopwatch 计时（`elapsedMicroseconds`）
+  - 和弦音符 `<chord/>` 使用 `prevNoteTickPos` 保证同步
+- **测试**：20 例单元测试（16 通过）+ 真机集成测试页面 `/playback-test`
+- 详见 [wiki/2026-03-22-playback-optimization.md](wiki/2026-03-22-playback-optimization.md)
+
+### 🎹 完整 88 键可滚动钢琴键盘 (2026-03-22)
+- **问题**：原键盘仅显示 2-5 个八度（由屏幕宽度决定），全部集中在高音区，无法触及低音/中音区
+- **重写方案**：使用 `CustomPainter` 高性能绘制全部 88 键 (A0→C8)，总宽度约 1976px
+- 横向滑动覆盖完整音域，自动滚到当前按键/应弹音符居中
+- 触摸弹奏 + 内置 SF2 音频合成，MIDI 设备联动自动跟随
+- 白键 38px 固定宽度，音名标签 (C4, D4...)，黑键叠放比例 0.58
+- 详见 [wiki/2026-03-22-ui-optimization.md](wiki/2026-03-22-ui-optimization.md)
+
+### 🎛️ 播放控制栏重构 (2026-03-22)
+- **问题**：播放/暂停/停止/重复/变速/手部模式全挤一行，信息过载
+- **竖屏**：三层分离 — 进度条(顶) → 播放按钮+小节信息(中) → 重复/变速/手部模式胶囊按钮(底)
+- **横屏**：专用紧凑版，侧栏 260→280px
+- 变速/手部/移调从下拉菜单改为点击循环切换
+- 播放按钮改为渐变圆形设计
+
+### 🔘 钢琴键盘触摸弹奏 (2026-03-22)
+- 键盘支持触摸点击，多指同时按下
+- 点击触发 `AudioSynthService.noteOn()` 内置合成器发声
+- `Listener` + hitTest 实现白键/黑键精准识别
+- 新增 `onNoteOn/onNoteOff` 回调供外部联动
+
+### 🎵 乐谱库扩充至 38 首 (2026-03-22)
+- 从 GitHub 三个开源仓库收集真实 MusicXML：OSMD(16首) + sightreader(4首) + musetrainer(18首)
+- 删除全部 29 首占位片段（4-13小节），替换为完整曲谱
+- 覆盖古典/民谣/影视，17-524小节
+- 关键曲目：德彪西月光、土耳其进行曲、卡农、肖邦夜曲/叙事曲、命运交响曲、致爱丽丝完整版等
+
+### 🔧 中文乐谱支持 (2026-03-22)
+- 清理并重建乐谱数据库，从磁盘 24 个 MusicXML 文件全部导入（含中文标题）
+- 修复 `sqlite3` CLI 插入中文编码问题，改用 Node.js (better-sqlite3) 保证 UTF-8
+- 解决数据库中重复/乱码记录
+
+### 🔧 OSMD WebView 中文乱码修复 (2026-03-22)
+- **根因**：Dart → WebView 使用 base64 编码传递 MusicXML，JS 端 `atob()` 不支持 UTF-8
+- `atob()` 按 Latin-1 处理字节，中文 3 字节序列被拆开→乱码
+- **修复**：`handleMessageB64` 改用 `Uint8Array.from(atob(b64), c => c.charCodeAt(0))` + `TextDecoder('utf-8')` 正确解码
+- 同步修复 CSS 中文字体栈：`body` 和 `svg text` 使用 `Noto Sans SC → Source Han Sans CN → WenQuanYi Micro Hei → Droid Sans Fallback → system-ui`
+
+### ✅ MIDI 自动连接 (2026-03-22)
+- 记录已连接设备到 SharedPreferences（名称 + 类型 + 连接时间，最多 10 个）
+- App 启动（SplashPage）后台自动扫描，发现已知设备自动连接
+- 多个已知设备按最近连接时间排序，优先连接最新的
+- 设备列表页：已连接设备置顶显示「断开」按钮，未连接设备显示「连接」按钮
+- 进入设备列表自动扫描，30 秒内复用缓存结果（刷新按钮强制重新扫描）
+- 已连接时不重复扫描，直接显示状态
+
+### 🔧 修复练习页面崩溃 (2026-03-22)
+- 钢琴键盘黑键负 margin 崩溃 → 改用 Transform.translate
+- 练习页面按琴键无法开始 → MusicXML 解析 Score + Ready 状态 MIDI 监听
+
+### ▶️ 乐谱播放功能 (2026-03-22)
+- 黑键 `Container` 使用负 margin (`-9px`) 导致断言失败崩溃
+- 改用 `Transform.translate(offset: Offset(-9, 0))` 实现叠放
+
+### ▶️ 乐谱播放功能 (2026-03-22)
+- 打通 `ScoreViewPage → AutoPlayer → MidiService / AudioSynthService` 完整播放流程
+- `AutoPlayer` 从 MusicXML 解析的 `Score` 对象生成 MIDI 事件序列，按时间调度
+- **内置 SF2 音频合成器**：无 MIDI 设备时自动 fallback，通过扬声器播放钢琴音色
+  - `dart_melty_soundfont` (纯 Dart SF2 合成器, 64 复音 + 混响 + 合声)
+  - `flutter_pcm_sound` (实时 PCM 音频输出, 44100Hz mono)
+  - 音色文件: `assets/sf2/Piano.sf2` (TimGM6mbEdit)
+- MIDI 真实发送：BLE 通过 `MidiCommand.sendData()`，USB 通过 `UsbPort.write()` (USB MIDI 4 字节包格式)
+- 竖屏 + 横屏均支持播放控件（播放/暂停/停止/变速/进度/当前小节）
+- OSMD 乐谱高亮跟随播放进度实时移动
+- `AutoPlayer` 生命周期与 `ScoreViewPage` 绑定，dispose 正确释放
+
+### 🔧 蓝牙 MIDI 连接修复 (2026-03-22)
+- 修复 `flutter_midi_command` 的 `stopScanningForBluetoothDevices()` 清空设备列表导致连接失败的 bug
+- 核心改动：扫描完成后不主动停止 BLE 扫描，保持设备列表有效直到连接成功/断开/退出
+- `_connectBleDevice` 连接前不再重新扫描，直接从运行中的设备列表获取新鲜设备引用
+- 添加连接超时机制（15s），超时给出明确提示
+- 连接成功后才停止 BLE 扫描，失败则扫描继续运行便于重试
+- `DeviceListPage` 添加防重复点击保护，连接中显示 loading 状态
+- 失败时显示具体错误原因（而非笼统的"连接失败"）
+- Home 页新增 MIDI 测试面板，连接成功后可实时验证音符接收
+- `disconnect()` 和 `dispose()` 确保停止 BLE 扫描
+
+### 📱 蓝牙 MIDI 扫描修复 (v2) (2026-03-21)
+- 修复 `BlePermissions._getAndroidSdkInt()` 永远返回 31 的 bug，改用 Android 原生 MethodChannel (`Build.VERSION.SDK_INT`) 获取真实 SDK 版本
+- Android 12-13 正确请求 `ACCESS_FINE_LOCATION`（BLE 扫描必需，Android 14+ 已移除此要求）
+- BLE 扫描初始化流程优化：先调用 `startBluetoothCentral()` + `waitUntilBluetoothIsInitialized()` 再开始扫描
+- BLE 扫描时间 5s → 8s（BLE 发现设备需要更长时间）
+- `scanAllDevices()` 增加蓝牙开启状态检查，蓝牙关闭时给出提示
+- 新增原生 MethodChannel `deepmusic/device_info` (MainActivity.kt)
+
+### 🔧 服务端与开发环境
+- 后端服务绑定 `0.0.0.0:3000`，局域网可访问；WSL 环境需配置 Windows 端口转发 (`netsh interface portproxy`)
+- `start.sh` 中 `tsc --noEmit` 因脚本文件 (`generate-scores.ts`) 隐式 any 类型报错，不影响运行
+
+### 🔧 依赖与构建更新
+- 更新 Flutter 依赖锁文件 (pubspec.lock)
+- 更新 Android Gradle 版本 (gradle-wrapper.properties)
+
+### 🎵 乐谱库完善
+- 完成 30 首乐谱 MusicXML 文件生成（含真实旋律音符数据）
+- 覆盖古典、影视、民歌、流行、爵士等分类
+- 10 首初级 / 13 首中级 / 7 首高级
+
+### 🔧 OSMD 渲染修复
+- 将 OpenSheetMusicDisplay 库内联到 HTML（1.2MB），解决国内 CDN 加载失败问题
+- 乐谱渲染器不再依赖外部网络，支持离线渲染
+
+### 🗄️ 本地开发优化
+- SQLite 数据库支持，无需 PostgreSQL 即可本地开发
+- 乐谱生成脚本 `server/src/scripts/generate-scores.ts`
+- 服务端 26 个 API 端点全部正常运行
+
+### 📱 App 修复 (2026-03-21)
+- 修复「自由练习」按钮点击无响应，跳转至乐谱库选曲
+- 修复蓝牙 MIDI 扫描无设备问题
+  - 添加 Android 12+ 运行时蓝牙权限请求（BLUETOOTH_SCAN / BLUETOOTH_CONNECT）
+  - 修复设备类型过滤逻辑，不再错误过滤 BLE 设备
+  - BLE 扫描时间 3s → 5s
+- Manifest 添加 `usesCleartextTraffic` 支持 HTTP 后端连接
+- 强化自动登录逻辑，token 有效直接进主页，过期才跳登录页
+
+---
+
+## 开发进度
+
+### ✅ 已完成
+
+**设计文档**
+- [x] 产品需求文档 (PRD)
+- [x] 技术架构设计
+- [x] 开发路线图
+- [x] 环境配置文档
+
+**后端 API** (26 个端点，全部测试通过)
+- [x] Auth: register / login / logout / me(GET) / me(PATCH)
+- [x] Scores: list / recommended / search / detail / upload / update / publish / delete / xml / favorite / unfavorite
+- [x] Practice: start / note / end / create / list / stats / detail / delete
+- [x] Devices: list / register / update / delete / connect
+- [x] User: profile(GET) / profile(PUT) / favorites / statistics
+- [x] Health check
+- [x] JWT 认证 + Token 黑名单 (登出失效)
+- [x] 文件上传 (Multer) + MusicXML 文件下载
+- [x] 收藏/取消收藏 (User-Score 多对多)
+- [x] 练习会话持久化 (Prisma PracticeSession, 事务化操作, 替代内存 Map)
+- [x] Prisma 数据模型 (Score/User/PracticeRecord/PracticeSession/Tag/Device) + 迁移
+- [x] 30 首乐谱种子数据导入 + MusicXML 文件生成
+
+**移动端核心模块**
+- [x] Flutter 项目结构 + feature-based 组织
+- [x] AutoPlayer 自动播放引擎 (MIDI 事件调度 + 变速 + OSMD 跟随 + 内置 SF2 音频合成 + schedule-next-event 时钟)
+- [x] AudioSynthService 内置音频合成器 (dart_melty_soundfont + flutter_pcm_sound, 零拷贝 PCM, 无 MIDI 设备 fallback)
+- [x] Riverpod 状态管理 + 路由配置
+- [x] Dart 数据模型 (Score/Part/Measure/Note/TimeSignature/KeySignature)
+- [x] MusicXML 解析器 (score-partwise + timewise，含 divisions/和弦/休止符/变拍号/tempo 解析优先级)
+- [x] OSMD 乐谱渲染器 (WebView + JS Bridge 双向通信)
+- [x] ScoreFollower 乐谱跟随引擎 (和弦组匹配/容错跳过/自动翻页/手动翻页/区间循环)
+- [x] NoteEvaluator 音符评估器 (音准+节奏双维度评分)
+- [x] MidiService MIDI 服务 (BLE + USB 双连接, USB OTG 底层, BLE 断线自动重连, 已知设备启动自动连接)
+- [x] API Client (Dio + Token 管理)
+- [x] Auth Repository (register/login/logout/token 持久化)
+- [x] Score Repository (列表/搜索/详情/下载/收藏)
+- [x] Practice Repository (start→note→end 完整流程封装)
+- [x] SplashPage (登录状态检查, 自动路由)
+
+**前端页面**
+- [x] AuthPage — 登录/注册 (表单验证, 模式切换, 跳过登录)
+- [x] HomePage — 设备连接卡片/快速开始/底部导航
+- [x] ScoreLibraryPage — 乐谱库浏览 (分类/搜索/筛选)
+- [x] ScoreViewPage — 乐谱详情 + OSMD 渲染 + 自动播放试听 (变速 0.5x-2.0x, 竖屏/横屏均有播放控件) + 收藏
+- [x] PracticePage — 练习界面 (OSMD 渲染 + 高亮跟随 + 手动翻页 + 区间循环练习 + 和弦显示/报告)
+- [x] PracticeHistoryPage — 练习历史 (分页/下拉刷新/左滑删除/详情)
+- [x] StatisticsPage — 学习统计 (累计时长/等级分布/最佳成绩)
+- [x] DeviceListPage — MIDI 设备扫描连接 (USB/BLE 分组展示, 热插拔检测)
+- [x] ProfilePage — 个人页面 (用户信息/统计/菜单/登出)
+- [x] SettingsPage — 应用设置 (音频输出模式/默认显示键盘)
+- [x] PlaybackTestPage — 播放集成测试 (AudioSynth 初始化/tempo 检测/计时精度/UI 节流验证)
+
+### ⏳ 进行中
+- [x] 蓝牙 MIDI 连接 (BLE 连接已验证通过，真机测试通过 ✅)
+- [ ] USB MIDI 真机调试
+- [ ] 端到端集成测试
+- [ ] 个人资料编辑 (F7.2)
+
+### 📋 待开发
+- [x] MIDI 自动连接 — 启动时自动扫描并连接已知设备（最近连接优先），设备列表已连接置顶+断开按钮
+- [ ] 离线乐谱缓存 (Hive 本地存储)
+- [x] 横屏/竖屏适配 (Practice/ScoreView/ScoreLibrary/Home 自适应布局)
+- [ ] 暗色模式
+- [ ] ScoreFollower 力度/表情评估 (Phase 2)
+- [ ] App 发布 (Google Play / App Store)
+
+---
+
+## 文档
+
+- [PRD — 产品需求文档](docs/PRD.md)
+- [ARCHITECTURE — 技术架构](docs/ARCHITECTURE.md)
+- [ROADMAP — 开发路线图](docs/ROADMAP.md)
+- [SETUP — 环境配置](docs/SETUP.md)
+
+---
+
+*项目启动: 2026-03-15 | 最近更新: 2026-03-24 09:00*

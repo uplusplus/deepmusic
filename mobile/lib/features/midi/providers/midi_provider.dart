@@ -1,68 +1,42 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../midi/services/midi_service.dart';
+import '../services/midi_service.dart';
 
 /// MIDI 连接状态 Provider
-final midiConnectionStateProvider = StateProvider<MidiConnectionState>((ref) {
-  return MidiConnectionState.disconnected;
+final midiConnectionStateProvider = StreamProvider<MidiConnectionState>((ref) {
+  return MidiService().connectionState;
 });
 
-/// 已连接设备 Provider
-final connectedDeviceProvider = StateProvider<MidiDevice?>((ref) {
-  return null;
+/// MIDI 设备列表 Provider
+final midiDevicesProvider = StreamProvider<List<MidiDevice>>((ref) {
+  return MidiService().devices;
 });
 
-/// MIDI 服务 Provider
-final midiServiceProvider = Provider<MidiService>((ref) {
-  return MidiService();
+/// MIDI 连接信息 Provider
+final midiConnectionInfoProvider = Provider<MidiConnectionInfo>((ref) {
+  final state = ref.watch(midiConnectionStateProvider).valueOrNull ??
+      MidiConnectionState.disconnected;
+  final service = MidiService();
+  return MidiConnectionInfo(
+    state: state,
+    deviceName: service.connectedDevice?.name,
+    connectionType: service.connectionType,
+  );
 });
 
-/// 设备列表 Provider
-final deviceListProvider = FutureProvider<List<MidiDevice>>((ref) async {
-  final midiService = ref.watch(midiServiceProvider);
-  return midiService.scanDevices();
-});
+class MidiConnectionInfo {
+  final MidiConnectionState state;
+  final String? deviceName;
+  final MidiConnectionType? connectionType;
 
-/// MIDI 状态管理器
-class MidiNotifier extends StateNotifier<AsyncValue<void>> {
-  final MidiService _midiService;
-  final Ref _ref;
+  MidiConnectionInfo({
+    required this.state,
+    this.deviceName,
+    this.connectionType,
+  });
 
-  MidiNotifier(this._midiService, this._ref) : super(const AsyncValue.data(null)) {
-    _init();
-  }
-
-  void _init() {
-    // 监听连接状态
-    _midiService.connectionState.listen((state) {
-      _ref.read(midiConnectionStateProvider.notifier).state = state;
-    });
-  }
-
-  Future<bool> connect(MidiDevice device) async {
-    state = const AsyncValue.loading();
-    
-    try {
-      final success = await _midiService.connect(device);
-      if (success) {
-        _ref.read(connectedDeviceProvider.notifier).state = 
-          _midiService.connectedDevice;
-      }
-      state = const AsyncValue.data(null);
-      return success;
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-      return false;
-    }
-  }
-
-  Future<void> disconnect() async {
-    await _midiService.disconnect();
-    _ref.read(connectedDeviceProvider.notifier).state = null;
-  }
+  bool get isConnected => state == MidiConnectionState.connected;
+  String get typeLabel =>
+      connectionType == MidiConnectionType.usb ? 'USB' : 'BLE';
 }
-
-final midiNotifierProvider = StateNotifierProvider<MidiNotifier, AsyncValue<void>>((ref) {
-  final midiService = ref.watch(midiServiceProvider);
-  return MidiNotifier(midiService, ref);
-});

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
+import '../../midi/services/midi_service.dart';
 import '../../midi/providers/midi_provider.dart';
 import '../../../core/router/app_router.dart';
 import '../../../core/constants/app_colors.dart';
@@ -9,8 +11,10 @@ class HomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final connectionState = ref.watch(midiConnectionStateProvider);
-    final connectedDevice = ref.watch(connectedDeviceProvider);
+    final connectionInfo = ref.watch(midiConnectionInfoProvider);
+    final MidiConnectionState connectionState = connectionInfo.state;
+    final String? deviceName = connectionInfo.deviceName;
+    final bool isConnected = connectionInfo.isConnected;
 
     return Scaffold(
       body: SafeArea(
@@ -59,7 +63,13 @@ class HomePage extends ConsumerWidget {
               const SizedBox(height: 32),
 
               // 设备连接卡片
-              _buildDeviceCard(context, connectionState, connectedDevice),
+              _buildDeviceCard(context, connectionState, deviceName),
+
+              // MIDI 测试面板（仅连接时显示）
+              if (isConnected) ...[
+                const SizedBox(height: 16),
+                _MidiTestPanel(),
+              ],
 
               const SizedBox(height: 24),
 
@@ -97,7 +107,7 @@ class HomePage extends ConsumerWidget {
   Widget _buildDeviceCard(
     BuildContext context,
     MidiConnectionState state,
-    MidiDevice? device,
+    String? deviceName,
   ) {
     bool isConnected = state == MidiConnectionState.connected;
     bool isConnecting = state == MidiConnectionState.connecting;
@@ -139,7 +149,7 @@ class HomePage extends ConsumerWidget {
                 children: [
                   Text(
                     isConnected
-                        ? device!.name
+                        ? (deviceName ?? 'MIDI 设备')
                         : (isConnecting ? '正在连接...' : '连接电钢琴'),
                     style: const TextStyle(
                       color: Colors.white,
@@ -183,38 +193,34 @@ class HomePage extends ConsumerWidget {
         title: '自由练习',
         subtitle: '开始弹奏',
         color: AppColors.accent,
-        onTap: () {
-          // TODO: 实现自由练习
-        },
+        onTap: () => Navigator.of(context).pushNamed(AppRouter.scoreLibrary),
       ),
       _QuickStartItem(
         icon: Icons.history,
         title: '练习记录',
         subtitle: '查看历史',
         color: AppColors.info,
-        onTap: () {
-          // TODO: 实现练习记录
-        },
+        onTap: () => Navigator.of(context).pushNamed(AppRouter.practiceHistory),
       ),
       _QuickStartItem(
         icon: Icons.trending_up,
         title: '学习统计',
         subtitle: '查看进度',
         color: AppColors.warning,
-        onTap: () {
-          // TODO: 实现学习统计
-        },
+        onTap: () => Navigator.of(context).pushNamed(AppRouter.statistics),
       ),
     ];
 
+    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: isLandscape ? 4 : 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 1.5,
+        childAspectRatio: isLandscape ? 1.8 : 1.5,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => _buildQuickStartItem(items[index]),
@@ -334,4 +340,95 @@ class _QuickStartItem {
     required this.color,
     required this.onTap,
   });
+}
+
+/// MIDI 测试面板 — 连接成功后弹琴可实时看到音符
+class _MidiTestPanel extends StatefulWidget {
+  @override
+  State<_MidiTestPanel> createState() => _MidiTestPanelState();
+}
+
+class _MidiTestPanelState extends State<_MidiTestPanel> {
+  final MidiService _midiService = MidiService();
+  StreamSubscription? _midiSub;
+  final List<String> _recentNotes = [];
+  int _noteCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _midiSub = _midiService.midiStream.listen((event) {
+      if (event.type == MidiEventType.noteOn && event.velocity > 0) {
+        setState(() {
+          _noteCount++;
+          _recentNotes.add(event.noteName);
+          if (_recentNotes.length > 12) _recentNotes.removeAt(0);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _midiSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.success.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.success.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.music_note, color: AppColors.success, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'MIDI 测试',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              const Spacer(),
+              Text(
+                '已接收 $_noteCount 个音符',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_recentNotes.isEmpty)
+            const Text(
+              '🎹 在钢琴上弹几个音试试',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            )
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _recentNotes.map((note) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  note,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: AppColors.success,
+                  ),
+                ),
+              )).toList(),
+            ),
+        ],
+      ),
+    );
+  }
 }

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>OSMD Benchmark</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+    h1 { color: #e94560; margin-bottom: 16px; }
+    #log { white-space: pre-wrap; line-height: 1.6; font-size: 13px; }
+    .perf { color: #0f3460; }
+    .ok { color: #4ecca3; }
+    .warn { color: #e9c46a; }
+    .err { color: #e94560; }
+    .dim { color: #666; }
+    #controls { margin: 16px 0; }
+    button { background: #16213e; color: #eee; border: 1px solid #e94560; padding: 8px 16px; margin: 4px; cursor: pointer; font-family: monospace; }
+    button:hover { background: #e94560; }
+    select { background: #16213e; color: #eee; border: 1px solid #0f3460; padding: 8px; font-family: monospace; }
+    #score-container { background: #fff; margin-top: 16px; min-height: 200px; }
+  </style>
+</head>
+<body>
+  <h1>🎵 OSMD 渲染性能测试</h1>
+
+  <div id="controls">
+    <label>选择测试曲谱: </label>
+    <select id="scoreSelect">
+      <option value="twinkle_star">小星星 (简单, ~9KB)</option>
+      <option value="fur_elise">致爱丽丝 (中等)</option>
+      <option value="canon">卡农 (较复杂)</option>
+    </select>
+    <button onclick="runBenchmark()">▶ 运行测试</button>
+    <button onclick="runBenchmark3()">▶ 3次取平均</button>
+    <button onclick="clearLog()">🗑 清空日志</button>
+  </div>
+
+  <div id="log"></div>
+  <div id="score-container"></div>
+
+  <script src="opensheetmusicdisplay.min.js"></script>
+  <script>
+    var logEl = document.getElementById('log');
+    var osmd = null;
+    var results = [];
+
+    function log(msg, cls) {
+      var span = document.createElement('span');
+      span.className = cls || '';
+      span.textContent = msg + '\n';
+      logEl.appendChild(span);
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    function clearLog() {
+      logEl.innerHTML = '';
+      results = [];
+    }
+
+    // 内置测试 XML（小星星 - 简单曲谱）
+    var testXmls = {
+      twinkle_star: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <work><work-title>Twinkle Twinkle Little Star</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note>
+    </measure>
+    <measure number="5">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+    </measure>
+    <measure number="6">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note>
+    </measure>
+    <measure number="7">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+    </measure>
+    <measure number="8">
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`,
+
+      fur_elise: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <work><work-title>Für Elise</work-title></work>
+  <identification><creator type="composer">Beethoven</creator></identification>
+  <part-list>
+    <score-part id="P1"><part-name>Piano</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>8</divisions><key><fifths>0</fifths></key><time><beats>3</beats><beat-type>8</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <direction placement="above"><direction-type><metronome parentheses="no"><beat-unit>eighth</beat-unit><per-minute>140</per-minute></metronome></direction-type></direction>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="4">
+      <attributes><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><rest/><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="5">
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><rest/><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="6">
+      <note><rest/><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><alter>5</alter><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="7">
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><rest/><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="8">
+      <note><rest/><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="9">
+      <note><pitch><step>D</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="10">
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="11">
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="12">
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type><dot/></note>
+    </measure>
+  </part>
+</score-partwise>`,
+
+      canon: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <work><work-title>Canon in D</work-title></work>
+  <identification><creator type="composer">Pachelbel</creator></identification>
+  <part-list>
+    <score-part id="P1"><part-name>Violin I</part-name></score-part>
+    <score-part id="P2"><part-name>Violin II</part-name></score-part>
+    <score-part id="P3"><part-name>Cello</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><pitch><step>F</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>F</step><alter>5</alter><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>F</step><alter>5</alter><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>F</step><alter>5</alter><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><rest/><duration>4</duration><type>quarter</type></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <note><rest/><duration>8</duration><type>half</type></note>
+      <note><pitch><step>F</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>F</step><alter>5</alter><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>C</step><alter>5</alter><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><rest/><duration>4</duration><type>quarter</type></note>
+    </measure>
+  </part>
+  <part id="P3">
+    <measure number="1">
+      <attributes><divisions>4</divisions><key><fifths>1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>A</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>B</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><alter>5</alter><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>A</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>A</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>B</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>F</step><alter>5</alter><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>4</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>3</octave></pitch><duration>8</duration><type>half</type></note>
+    </measure>
+  </part>
+</score-partwise>`
+    };
+
+    async function runBenchmark() {
+      var name = document.getElementById('scoreSelect').value;
+      var xml = testXmls[name];
+      if (!xml) {
+        // 尝试从本地文件加载
+        log('⚠ 内置 XML 不存在，尝试 fetch...', 'warn');
+        try {
+          var resp = await fetch(name + '.xml');
+          xml = await resp.text();
+        } catch(e) {
+          log('❌ 加载失败: ' + e.message, 'err');
+          return;
+        }
+      }
+
+      var xmlSize = xml.length;
+      log('', '');
+      log('═══════════════════════════════════════════', 'ok');
+      log('▶ 测试: ' + name + '  (' + xmlSize + ' chars)', 'ok');
+      log('═══════════════════════════════════════════', 'ok');
+
+      var t0 = performance.now();
+
+      // 初始化 OSMD（仅首次）
+      if (!osmd) {
+        var container = document.getElementById('score-container');
+        container.innerHTML = '';
+        osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(container, {
+          autoResize: false,
+          drawTitle: true,
+          drawSubtitle: false,
+          drawComposer: false,
+          drawCredits: false,
+          pageFormat: 'Endless',
+        });
+        osmd.setLogLevel('WARN');
+        var t_init = performance.now();
+        log('  OSMD init:    ' + (t_init - t0).toFixed(1) + 'ms', 'dim');
+        t0 = t_init;
+      }
+
+      // ── load ──
+      var t1 = performance.now();
+      try {
+        await osmd.load(xml);
+      } catch(e) {
+        log('❌ load 失败: ' + e.message, 'err');
+        return;
+      }
+      var t2 = performance.now();
+      var loadMs = t2 - t1;
+      log('  T_osmd_load:  ' + loadMs.toFixed(1) + 'ms', loadMs > 300 ? 'warn' : 'ok');
+
+      // ── render ──
+      var t3 = performance.now();
+      try {
+        await osmd.render();
+      } catch(e) {
+        log('❌ render 失败: ' + e.message, 'err');
+        return;
+      }
+      var t4 = performance.now();
+      var renderMs = t4 - t3;
+      log('  T_osmd_render:' + renderMs.toFixed(1) + 'ms', renderMs > 300 ? 'warn' : 'ok');
+
+      // ── collect positions ──
+      var t5 = performance.now();
+      var measures = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : 0;
+      var svg = container.querySelector('svg');
+      var svgW = svg ? svg.getBoundingClientRect().width.toFixed(0) : '?';
+      var svgH = svg ? svg.getBoundingClientRect().height.toFixed(0) : '?';
+      var svgNodes = svg ? svg.querySelectorAll('*').length : 0;
+      var t6 = performance.now();
+
+      log('  T_collect:    ' + (t6 - t5).toFixed(1) + 'ms', 'dim');
+      log('───────────────────────────────────────────', 'dim');
+      log('  TOTAL:        ' + (t4 - t0).toFixed(1) + 'ms', 'ok');
+      log('  measures:     ' + measures, 'dim');
+      log('  SVG:          ' + svgW + ' x ' + svgH + '  (' + svgNodes + ' nodes)', 'dim');
+      log('═══════════════════════════════════════════', 'ok');
+
+      results.push({ name, xmlSize, loadMs, renderMs, total: t4 - t0, measures, svgNodes });
+    }
+
+    async function runBenchmark3() {
+      clearLog();
+      log('🔄 连续测试 3 次取平均...\n', 'warn');
+      for (var i = 0; i < 3; i++) {
+        log('--- Round ' + (i+1) + ' ---', 'dim');
+        await runBenchmark();
+        await new Promise(r => setTimeout(r, 500)); // 间隔 500ms
+      }
+
+      // 计算平均值
+      if (results.length >= 3) {
+        var last3 = results.slice(-3);
+        var avgLoad = last3.reduce((s,r) => s + r.loadMs, 0) / 3;
+        var avgRender = last3.reduce((s,r) => s + r.renderMs, 0) / 3;
+        var avgTotal = last3.reduce((s,r) => s + r.total, 0) / 3;
+        log('', '');
+        log('═══════════════════════════════════════════', 'warn');
+        log('📊 3 次平均:', 'warn');
+        log('  load:   ' + avgLoad.toFixed(1) + 'ms', 'warn');
+        log('  render: ' + avgRender.toFixed(1) + 'ms', 'warn');
+        log('  total:  ' + avgTotal.toFixed(1) + 'ms', 'warn');
+        log('═══════════════════════════════════════════', 'warn');
+      }
+    }
+  </script>
+</body>
+</html>

@@ -4,3 +4,5 @@ dist/
 uploads/
 logs/
 *.log
+*.db
+prisma/*.db

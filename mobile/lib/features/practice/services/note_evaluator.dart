@@ -1,5 +1,5 @@
-import '../models/score.dart';
-import 'note_event.dart';
+import '../../score/models/score.dart';
+import '../models/note_event.dart';
 
 /// 音符评估结果
 class NoteEvaluation {
@@ -173,8 +173,8 @@ class NoteEvaluator {
       wrongNotes: wrong,
       missedNotes: missed,
       extraNotes: extra,
-      pitchScore: pitchScore,
-      rhythmScore: rhythmScore,
+      pitchScore: pitchScore.toDouble(),
+      rhythmScore: rhythmScore.toDouble(),
       overallScore: overallScore,
       duration: endTime.difference(startTime),
       evaluations: evaluations,
