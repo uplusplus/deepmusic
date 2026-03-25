@@ -131,6 +131,43 @@ class ScoreRepository {
       throw ScoreException(e.message ?? '取消收藏失败');
     }
   }
+
+  /// 上传乐谱文件
+  Future<ScoreModel> uploadScore({
+    required String filePath,
+    required String title,
+    required String composer,
+    String? arranger,
+    required String difficulty,
+    String? category,
+    String? source,
+    String? license,
+  }) async {
+    try {
+      final fileName = filePath.split('/').last.split(r'\').last;
+
+      final formData = FormData.fromMap({
+        'title': title,
+        'composer': composer,
+        'difficulty': difficulty,
+        if (arranger != null && arranger.isNotEmpty) 'arranger': arranger,
+        if (category != null && category.isNotEmpty) 'category': category,
+        if (source != null && source.isNotEmpty) 'source': source,
+        if (license != null && license.isNotEmpty) 'license': license,
+        'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      });
+
+      final response = await _apiClient.dio.post(
+        '/scores',
+        data: formData,
+        options: Options(headers: {'Content-Type': 'multipart/form-data'}),
+      );
+
+      return ScoreModel.fromJson(response.data['data']);
+    } on DioException catch (e) {
+      throw ScoreException(e.message ?? '上传乐谱失败');
+    }
+  }
 }
 
 /// 乐谱模型 (API 响应)

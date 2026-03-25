@@ -59,6 +59,13 @@ class _ScoreLibraryPageState extends ConsumerState<ScoreLibraryPage>
       body: _searchQuery.isNotEmpty
           ? _buildSearchResults()
           : _buildCategoryList(),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.of(context).pushNamed(AppRouter.scoreUpload);
+        },
+        icon: const Icon(Icons.upload),
+        label: const Text('上传乐谱'),
+      ),
     );
   }
 

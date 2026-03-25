@@ -4,6 +4,7 @@ import '../../features/home/pages/home_page.dart';
 import '../../features/midi/pages/device_list_page.dart';
 import '../../features/midi/services/midi_service.dart';
 import '../../features/score/pages/score_library_page.dart';
+import '../../features/score/pages/score_upload_page.dart';
 import '../../features/score/pages/score_view_page.dart';
 import '../../features/practice/pages/practice_page.dart';
 import '../../features/practice/pages/practice_history_page.dart';
@@ -21,6 +22,7 @@ class AppRouter {
   static const String home = '/home';
   static const String devices = '/devices';
   static const String scoreLibrary = '/scores';
+  static const String scoreUpload = '/scores/upload';
   static const String scoreView = '/scores/:id';
   static const String practice = '/practice/:scoreId';
   static const String practiceHistory = '/practice-history';
@@ -54,6 +56,11 @@ class AppRouter {
       case scoreLibrary:
         return MaterialPageRoute(
           builder: (_) => const ScoreLibraryPage(),
+          settings: settings,
+        );
+      case scoreUpload:
+        return MaterialPageRoute(
+          builder: (_) => const ScoreUploadPage(),
           settings: settings,
         );
       case scoreView:

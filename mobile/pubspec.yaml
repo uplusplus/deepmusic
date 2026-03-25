@@ -36,6 +36,9 @@ dependencies:
   cached_network_image: ^3.3.0
   shimmer: ^3.0.0
 
+  # 文件选择
+  file_picker: ^6.1.1
+
   # 工具
   uuid: ^4.2.1
   intl: ^0.18.1
