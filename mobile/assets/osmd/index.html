@@ -209,10 +209,10 @@ window.addEventListener('unhandledrejection', function(e) {
     var _rendering = false;
     var _pendingXml = null;  // 排队等待渲染的 XML
     var _renderCallCount = 0;
-    async function render(xmlString, measuresPerPage) {
+    async function render(xmlString, measuresPerPage, startMeasure, endMeasure) {
       // 分页设置
       if (measuresPerPage && measuresPerPage > 0) {
-        _measuresPerPage = measuresPerPage;
+        _measuresPerPage = parseInt(measuresPerPage, 10);
         _isPaged = true;
       } else {
         _isPaged = false;
@@ -271,13 +271,22 @@ window.addEventListener('unhandledrejection', function(e) {
         console.log('[PERF] T5_osmd_load: ' + t5.toFixed(1) + 'ms');
 
         // 应用小节范围（分页渲染）— 必须在 load 之后、render 之前
-        var startM = msg.startMeasure || 0;
-        var endM = msg.endMeasure || 9999;
+        var startM = startMeasure != null ? startMeasure : 0;
+        var endM;
+        if (endMeasure != null) {
+          endM = endMeasure;
+        } else if (_isPaged) {
+          // 分页模式：首屏只渲染第一页
+          endM = Math.min(_measuresPerPage - 1, 9999);
+        } else {
+          endM = 9999;
+        }
         var totalMeasures = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : 0;
+        _totalMeasures = totalMeasures;
         if (totalMeasures > 0) {
           osmd.EngravingRules.MinMeasureToDrawIndex = startM;
           osmd.EngravingRules.MaxMeasureToDrawIndex = Math.min(endM, totalMeasures - 1);
-          console.log('[OSMD] measure range: ' + startM + '-' + Math.min(endM, totalMeasures - 1) + ' / ' + totalMeasures);
+          console.log('[OSMD] measure range: ' + startM + '-' + Math.min(endM, totalMeasures - 1) + ' / ' + totalMeasures + ' paged=' + _isPaged + ' measuresPerPage=' + _measuresPerPage);
         }
         var t5 = performance.now();
         console.log('[PERF] T5_osmd_load: ' + t5.toFixed(1) + 'ms');
@@ -377,14 +386,56 @@ window.addEventListener('unhandledrejection', function(e) {
         var jsTotal = window._perfT3 ? (t6 - window._perfT3).toFixed(1) : '?';
         console.log('[PERF] JS_breakdown: decode=' + jsDecode + 'ms load=' + jsLoad + 'ms render=' + jsRender + 'ms total=' + jsTotal + 'ms');
 
+        // ── 分页裁剪：SVG 总高包含所有小节，但只显示当前页 ──
+        var clipHeight = null;
+        if (_isPaged && osmd.graphic && osmd.graphic.measureList) {
+          var ml = osmd.graphic.measureList;
+          var minIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
+          var maxIdx = osmd.EngravingRules.MaxMeasureToDrawIndex || (ml.length - 1);
+
+          // measureList 中的位置是相对于整个乐谱的
+          // 找到可见范围内的第一个和最后一个 measure 的 Y 坐标
+          var firstY = null;
+          var lastBottomY = null;
+
+          for (var i = 0; i < ml.length; i++) {
+            var m = ml[i][0];
+            if (!m || !m.PositionAndShape) continue;
+            var pos = m.PositionAndShape;
+            // 用 measureList 中的索引判断是否在可见范围内
+            if (i >= minIdx && i <= maxIdx) {
+              var y = pos.absolutePosition.y * 10;
+              var h = pos.size.height * 10;
+              if (firstY === null || y < firstY) firstY = y;
+              if (lastBottomY === null || y + h > lastBottomY) lastBottomY = y + h;
+            }
+          }
+
+          if (firstY !== null && lastBottomY !== null) {
+            var pageHeight = lastBottomY - firstY;
+            clipHeight = pageHeight + 40; // 留边距
+            var container = document.getElementById('score-container');
+            container.style.overflow = 'hidden';
+            container.style.height = clipHeight + 'px';
+            container.style.position = 'relative';
+            var svg = container.querySelector('svg');
+            if (svg) {
+              svg.style.transform = 'translateY(' + (-firstY) + 'px)';
+              svg.style.transformOrigin = 'top left';
+            }
+            console.log('[OSMD] clip: firstY=' + firstY.toFixed(1) + ' lastBottom=' + lastBottomY.toFixed(1) + ' pageHeight=' + pageHeight.toFixed(0) + 'px clipHeight=' + clipHeight.toFixed(0) + 'px range=' + minIdx + '-' + maxIdx);
+          }
+        }
+
         var total = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : measurePositions.length;
+        var containerEl = document.getElementById('score-container');
         sendToFlutter('rendered', {
           measureCount: measurePositions.length,
           totalMeasures: total,
           page: _currentPage,
           totalPages: _isPaged ? Math.ceil(total / _measuresPerPage) : 1,
-          width: document.getElementById('score-container').scrollWidth,
-          height: document.getElementById('score-container').scrollHeight,
+          width: containerEl.scrollWidth,
+          height: clipHeight || containerEl.scrollHeight,
         });
       } catch (e) {
         console.error('[OSMD] render #' + callId + ' ERROR: ' + e.message);
@@ -555,7 +606,7 @@ window.addEventListener('unhandledrejection', function(e) {
       try {
         const msg = JSON.parse(message);
         switch (msg.action) {
-          case 'render': render(msg.xml, msg.measuresPerPage); break;
+          case 'render': render(msg.xml, msg.measuresPerPage, msg.startMeasure, msg.endMeasure); break;
           case 'renderPage': renderPage(msg.page); break;
           case 'highlight': highlightMeasure(msg.measure); scrollToMeasure(msg.measure); break;
           case 'clearHighlight': clearHighlight(); break;
@@ -578,13 +629,16 @@ window.addEventListener('unhandledrejection', function(e) {
       }
       _currentPage = page;
       var total = osmd.Sheet.SourceMeasures.length;
-      var startM = page * _measuresPerPage;
-      var endM = Math.min(startM + _measuresPerPage - 1, total - 1);
+      var mpp = _measuresPerPage;
+      var startM = page * mpp;
+      var rawEnd = startM + mpp - 1;
+      var endM = Math.min(rawEnd, total - 1);
+      console.log('[OSMD] renderPage DEBUG2: page=' + page + ' type_page=' + typeof page + ' mpp=' + mpp + ' type_mpp=' + typeof mpp + ' startM=' + startM + ' rawEnd=' + rawEnd + ' endM=' + endM + ' total=' + total);
       if (startM >= total) {
         console.log('[OSMD] renderPage: page ' + page + ' out of range');
         return;
       }
-      console.log('[OSMD] renderPage ' + page + ': measures ' + startM + '-' + endM + ' / ' + total);
+      console.log('[OSMD] renderPage ' + page + ': measures ' + startM + '-' + endM + ' / ' + total + ' (mpp=' + mpp + ')');
 
       _rendering = true;
       try {
@@ -600,14 +654,46 @@ window.addEventListener('unhandledrejection', function(e) {
         applyCJKFonts();
         collectMeasurePositions();
 
-        var container = document.getElementById('score-container');
+        // ── 分页裁剪 ──
+        var clipHeight = null;
+        var clipContainer = document.getElementById('score-container');
+        var ml = osmd.graphic ? osmd.graphic.measureList : null;
+        if (ml && clipContainer) {
+          var firstY = null, lastBottomY = null;
+          var clipMinIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
+          var clipMaxIdx = osmd.EngravingRules.MaxMeasureToDrawIndex || (ml.length - 1);
+          for (var ci = 0; ci < ml.length; ci++) {
+            var cm = ml[ci][0];
+            if (!cm || !cm.PositionAndShape) continue;
+            if (ci < clipMinIdx || ci > clipMaxIdx) continue;
+            var cpos = cm.PositionAndShape;
+            var cy = cpos.absolutePosition.y * 10;
+            var ch = cpos.size.height * 10;
+            if (firstY === null || cy < firstY) firstY = cy;
+            if (lastBottomY === null || cy + ch > lastBottomY) lastBottomY = cy + ch;
+          }
+          if (firstY !== null && lastBottomY !== null) {
+            var pageHeight = lastBottomY - firstY;
+            clipHeight = pageHeight + 40;
+            clipContainer.style.overflow = 'hidden';
+            clipContainer.style.height = clipHeight + 'px';
+            clipContainer.style.position = 'relative';
+            var clipSvg = clipContainer.querySelector('svg');
+            if (clipSvg) {
+              clipSvg.style.transform = 'translateY(' + (-firstY) + 'px)';
+              clipSvg.style.transformOrigin = 'top left';
+            }
+            console.log('[OSMD] clip(page): firstY=' + firstY.toFixed(1) + ' lastBottom=' + lastBottomY.toFixed(1) + ' pageHeight=' + pageHeight.toFixed(0) + 'px range=' + clipMinIdx + '-' + clipMaxIdx);
+          }
+        }
+
         sendToFlutter('rendered', {
           measureCount: endM - startM + 1,
           totalMeasures: total,
           page: page,
           totalPages: Math.ceil(total / _measuresPerPage),
-          width: container.scrollWidth,
-          height: container.scrollHeight,
+          width: clipContainer ? clipContainer.scrollWidth : 0,
+          height: clipHeight || (clipContainer ? clipContainer.scrollHeight : 0),
         });
 
         // 滚到顶部

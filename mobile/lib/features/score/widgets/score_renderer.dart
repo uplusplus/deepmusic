@@ -229,9 +229,9 @@ class _ScoreRendererState extends State<ScoreRenderer> {
   void _renderScore() {
     _t0 = _perf.elapsedMilliseconds;
     debugPrint('[PERF] T0_render_start: ${_t0}ms xml=${widget.musicXml.length}chars');
-    final msg = {'action': 'render', 'xml': widget.musicXml};
+    final msg = <String, dynamic>{'action': 'render', 'xml': widget.musicXml};
     if (widget.measuresPerPage != null) {
-      msg['measuresPerPage'] = widget.measuresPerPage.toString();
+      msg['measuresPerPage'] = widget.measuresPerPage;
     }
     _sendMessage(msg);
     debugPrint('[PERF] T2_js_dispatched: ${_perf.elapsedMilliseconds}ms');

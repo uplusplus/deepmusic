@@ -67,7 +67,8 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   int _totalMeasures = 0;
   static const int _measuresPerPage = 15;
   bool get _isPaged => _totalPages > 1;
-  void Function(int page)? _renderPageFn; // ScoreRenderer 暴露的翻页方法
+  // 用 GlobalKey 访问 ScoreRenderer 的 renderPage 方法
+  final GlobalKey _rendererKey = GlobalKey();
 
   // 切谱过渡：loading 遮罩
   bool _showLoadingOverlay = false;
@@ -313,7 +314,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
       _currentPage = 0;
       _totalPages = 1;
       _totalMeasures = 0;
-      _renderPageFn = null;
     });
 
     // 刷新详情 provider
@@ -1039,7 +1039,14 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
     if (page == _currentPage) return;
     debugPrint('[Pagination] go to page $page ($_measuresPerPage measures/page, total=$_totalMeasures)');
     setState(() => _currentPage = page);
-    _renderPageFn?.call(page);
+    // 通过 GlobalKey 调用 ScoreRenderer 的 renderPage
+    final state = _rendererKey.currentState;
+    if (state != null) {
+      // ScoreRenderer._ScoreRendererState has public renderPage(int) method
+      (state as dynamic).renderPage(page);
+    } else {
+      debugPrint('[Pagination] renderer state is null!');
+    }
   }
 
   void _nextPage() => _goToPage(_currentPage + 1);
@@ -1080,19 +1087,19 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
 
     // 有 XML → 始终显示 ScoreRenderer（WebView 保持存活）
     // 切换乐谱时叠加 loading overlay，渲染完消失
+    debugPrint('[Pagination] _isPaged=$_isPaged _totalPages=$_totalPages _currentPage=$_currentPage measuresPerPage=$_measuresPerPage totalMeasures=$_totalMeasures');
     return Stack(
       children: [
         Container(
           color: Colors.white,
           child: ScoreRenderer(
+            key: _rendererKey,
             musicXml: _xmlContent!,
             highlightMeasure: _highlightMeasure,
             measuresPerPage: _measuresPerPage,
-            onPageControllerReady: (fn) {
-              _renderPageFn = fn;
-            },
             onRendered: (info) {
-              debugPrint('Score rendered: $info');
+              debugPrint('[Pagination] onRendered: $info');
+              debugPrint('[Pagination] parsed: totalMeasures=${info.totalMeasures} page=${info.page} totalPages=${info.totalPages}');
               if (mounted) {
                 setState(() {
                   _isLoadingXml = false;
