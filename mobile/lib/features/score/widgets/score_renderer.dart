@@ -31,6 +31,9 @@ class ScoreRenderer extends StatefulWidget {
   /// 每页小节数，null 表示不分页（渲染全部）
   final int? measuresPerPage;
 
+  /// 分页控制器回调 — 渲染完成后暴露 renderPage 方法供外部调用
+  final void Function(void Function(int page) renderPage)? onPageControllerReady;
+
   const ScoreRenderer({
     super.key,
     required this.musicXml,
@@ -41,6 +44,7 @@ class ScoreRenderer extends StatefulWidget {
     this.onRendered,
     this.onError,
     this.measuresPerPage,
+    this.onPageControllerReady,
   });
 
   @override
@@ -162,6 +166,8 @@ class _ScoreRendererState extends State<ScoreRenderer> {
 
         case 'fontReady':
           // CJK 字体加载完成，开始渲染乐谱
+          // 暴露分页控制器
+          widget.onPageControllerReady?.call(renderPage);
           if (widget.musicXml.isNotEmpty) {
             _renderScore();
           }

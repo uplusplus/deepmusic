@@ -185,8 +185,12 @@ window.addEventListener('unhandledrejection', function(e) {
                     applyCJKFonts();
                     collectMeasurePositions();
                     var container = document.getElementById('score-container');
+                    var total = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : measurePositions.length;
                     sendToFlutter('rendered', {
                       measureCount: measurePositions.length,
+                      totalMeasures: total,
+                      page: _currentPage,
+                      totalPages: _isPaged ? Math.ceil(total / _measuresPerPage) : 1,
                       width: container.scrollWidth,
                       height: container.scrollHeight,
                     });
@@ -373,8 +377,12 @@ window.addEventListener('unhandledrejection', function(e) {
         var jsTotal = window._perfT3 ? (t6 - window._perfT3).toFixed(1) : '?';
         console.log('[PERF] JS_breakdown: decode=' + jsDecode + 'ms load=' + jsLoad + 'ms render=' + jsRender + 'ms total=' + jsTotal + 'ms');
 
+        var total = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : measurePositions.length;
         sendToFlutter('rendered', {
           measureCount: measurePositions.length,
+          totalMeasures: total,
+          page: _currentPage,
+          totalPages: _isPaged ? Math.ceil(total / _measuresPerPage) : 1,
           width: document.getElementById('score-container').scrollWidth,
           height: document.getElementById('score-container').scrollHeight,
         });

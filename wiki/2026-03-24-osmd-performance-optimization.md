@@ -57,14 +57,27 @@ _loadScoreXml() 流程:
 - `renderPage(page)` — 翻页时不重新加载 XML，只切换 `MinMeasureToDrawIndex` / `MaxMeasureToDrawIndex` 并重新 `osmd.render()`
 - 翻页性能：跳过 XML 解析 + `osmd.load()`，只执行 VexFlow SVG 生成
 
-**Dart 侧**
-- `ScoreRenderer` 新增 `measuresPerPage` 参数
-- 新增 `renderPage(int page)` 方法供外部调用
+**Dart 侧集成**
+- `ScoreRenderer` 新增 `measuresPerPage` 参数 + `onPageControllerReady` 回调（暴露 `renderPage` 方法给父组件）
 - `ScoreRenderInfo` 扩展：`totalMeasures` / `page` / `totalPages`
+- `ScoreViewPage` 新增完整分页 UI：
+  - 阈值：每页 15 小节，小节数 > 15 时自动启用分页
+  - 翻页栏：上一页/下一页按钮 + 圆点页码指示器 + "x/y" 页码文字
+  - 竖屏/横屏均支持，位于乐谱区域和播放栏之间
+  - 切换乐谱时自动重置分页状态
+
+**JS 端改动**
+- 初始 `render()` 和 resize 后的 re-render 均返回 `totalMeasures` / `page` / `totalPages`
+- 三个 `sendToFlutter('rendered', ...)` 调用点统一返回分页信息
 
 **适用场景**
 - 长乐谱（100+ 小节）一次性渲染 SVG 过大，导致 WebView 内存压力
 - 用户只需看当前段落，分页可显著减少单次渲染量
+
+**涉及文件**
+- `mobile/lib/features/score/pages/score_view_page.dart` — 分页状态管理 + 翻页 UI + 切曲重置
+- `mobile/lib/features/score/widgets/score_renderer.dart` — onPageControllerReady 回调
+- `mobile/assets/osmd/index.html` — render()/resize 后返回完整分页信息
 
 ### 4. 独立性能测试页
 
