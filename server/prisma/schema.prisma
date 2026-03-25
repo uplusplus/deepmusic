@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 乐谱
+model Score {
+  id          String   @id @default(uuid())
+  title       String
+  composer    String
+  arranger    String?
+  difficulty  String @default("BEGINNER")
+  
+  // 文件信息
+  musicXmlPath String  // MusicXML 文件路径
+  coverImage   String? // 封面图片路径
+  fileSize     Int     // 文件大小 (bytes)
+  
+  // 元数据
+  duration     Int     // 预估时长 (秒)
+  measures     Int     // 小节数
+  timeSignature String @default("4/4")
+  keySignature  String @default("C Major")
+  tempo        Int     @default(120) // BPM
+  
+  // 分类
+  category    String?  // 古典、流行、爵士等
+  tags        Tag[]    // 标签
+  
+  // 统计
+  playCount   Int      @default(0)
+  favoriteCount Int    @default(0)
+  
+  // 状态
+  status      String @default("DRAFT")
+  isPublic    Boolean     @default(true)
+  
+  // 版权信息
+  source      String?  // 来源 (IMSLP, Mutopia 等)
+  license     String?  // 许可证
+  copyright   String?  // 版权声明
+  
+  // 时间戳
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  publishedAt DateTime?
+  
+  // 关系
+  practiceRecords PracticeRecord[]
+  favorites       User[]            @relation("UserFavorites")
+
+  @@index([title])
+  @@index([composer])
+  @@index([difficulty])
+  @@index([category])
+}
+
+// 标签
+model Tag {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  scores    Score[]
+
+  @@index([name])
+}
+
+// 用户
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password      String
+  nickname      String?
+  avatar        String?
+  
+  // 统计
+  totalPracticeTime Int   @default(0) // 总练习时长 (秒)
+  totalSessions     Int   @default(0) // 总练习次数
+  totalNotes        Int   @default(0) // 总弹奏音符数
+  
+  // 关系
+  practiceRecords  PracticeRecord[]
+  favorites        Score[]          @relation("UserFavorites")
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// 练习记录
+model PracticeRecord {
+  id        String   @id @default(uuid())
+  userId    String
+  scoreId   String
+  
+  // 练习数据
+  duration      Int     // 练习时长 (秒)
+  notesPlayed   Int     // 弹奏音符数
+  
+  // 评分
+  pitchScore    Float   // 音准分数 (0-100)
+  rhythmScore   Float   // 节奏分数 (0-100)
+  overallScore  Float   // 综合分数 (0-100)
+  grade         String  // 等级 (S, A, B, C, D, F)
+  
+  // 详细数据 (TEXT)
+  details       String? // 详细评估数据 (JSON字符串)
+  
+  // 时间戳
+  startedAt     DateTime
+  completedAt   DateTime @default(now())
+  
+  // 关系
+  user          User    @relation(fields: [userId], references: [id])
+  score         Score   @relation(fields: [scoreId], references: [id])
+
+  @@index([userId])
+  @@index([scoreId])
+  @@index([completedAt])
+}
+
+// 设备
+model Device {
+  id            String   @id @default(uuid())
+  userId        String?
+  name          String
+  manufacturer  String?
+  model         String?
+  lastConnected DateTime?
+  createdAt     DateTime @default(now())
+}
+
+// Enum values are stored as strings
+// Difficulty: BEGINNER, INTERMEDIATE, ADVANCED
+// ScoreStatus: DRAFT, PUBLISHED, ARCHIVED
