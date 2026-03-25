@@ -270,23 +270,16 @@ window.addEventListener('unhandledrejection', function(e) {
         var t5 = performance.now();
         console.log('[PERF] T5_osmd_load: ' + t5.toFixed(1) + 'ms');
 
-        // 应用小节范围（分页渲染）— 必须在 load 之后、render 之前
-        var startM = startMeasure != null ? startMeasure : 0;
-        var endM;
-        if (endMeasure != null) {
-          endM = endMeasure;
-        } else if (_isPaged) {
-          // 分页模式：首屏只渲染第一页
-          endM = Math.min(_measuresPerPage - 1, 9999);
-        } else {
-          endM = 9999;
-        }
+        // 应用小节范围 — 必须在 load 之后、render 之前
+        // 首次渲染：渲染全部小节，支持 WebView 自由滚动
+        var startM = 0;
+        var endM = 9999;
         var totalMeasures = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : 0;
         _totalMeasures = totalMeasures;
         if (totalMeasures > 0) {
           osmd.EngravingRules.MinMeasureToDrawIndex = startM;
-          osmd.EngravingRules.MaxMeasureToDrawIndex = Math.min(endM, totalMeasures - 1);
-          console.log('[OSMD] measure range: ' + startM + '-' + Math.min(endM, totalMeasures - 1) + ' / ' + totalMeasures + ' paged=' + _isPaged + ' measuresPerPage=' + _measuresPerPage);
+          osmd.EngravingRules.MaxMeasureToDrawIndex = totalMeasures - 1;
+          console.log('[OSMD] render all: ' + totalMeasures + ' measures, paged=' + _isPaged + ' measuresPerPage=' + _measuresPerPage);
         }
         var t5 = performance.now();
         console.log('[PERF] T5_osmd_load: ' + t5.toFixed(1) + 'ms');
@@ -386,24 +379,26 @@ window.addEventListener('unhandledrejection', function(e) {
         var jsTotal = window._perfT3 ? (t6 - window._perfT3).toFixed(1) : '?';
         console.log('[PERF] JS_breakdown: decode=' + jsDecode + 'ms load=' + jsLoad + 'ms render=' + jsRender + 'ms total=' + jsTotal + 'ms');
 
-        // ── 分页定位：SVG 渲染全部内容，滚动到当前页位置 ──
-        var clipHeight = null;
-        if (_isPaged) {
-          // 找到当前页第一小节的 Y 坐标
-          var scrollY = 0;
+        // ── 分页定位 + 滚动监听 ──
+        if (_isPaged && _totalMeasures > 0) {
+          // 计算每页起始小节的 Y 坐标，用于 scrollTo
+          _pageScrollPositions = [];
           if (osmd.graphic && osmd.graphic.measureList) {
             var ml = osmd.graphic.measureList;
-            var minIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
-            for (var i = 0; i < ml.length; i++) {
-              if (i === minIdx && ml[i][0] && ml[i][0].PositionAndShape) {
-                scrollY = ml[i][0].PositionAndShape.absolutePosition.y * 10;
-                break;
+            for (var pi = 0; pi < _totalPages; pi++) {
+              var pageStartIdx = pi * _measuresPerPage;
+              for (var mi = 0; mi < ml.length; mi++) {
+                if (mi === pageStartIdx && ml[mi][0] && ml[mi][0].PositionAndShape) {
+                  _pageScrollPositions.push(ml[mi][0].PositionAndShape.absolutePosition.y * 10);
+                  break;
+                }
               }
             }
           }
-          // 用 scrollTo 滚到当前页（保留标题可见）
-          window.scrollTo({ top: Math.max(0, scrollY - 30), behavior: 'auto' });
-          console.log('[OSMD] scroll: scrollTo=' + Math.max(0, scrollY - 30).toFixed(0) + 'px page=' + _currentPage);
+          console.log('[OSMD] page positions: ' + JSON.stringify(_pageScrollPositions));
+
+          // 监听滚动事件，自动翻页
+          _setupScrollListener();
         }
 
         var total = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : measurePositions.length;
@@ -580,6 +575,59 @@ window.addEventListener('unhandledrejection', function(e) {
     var _currentPage = 0;
     var _totalMeasures = 0;
     var _isPaged = false;
+    var _totalPages = 1;
+    var _pageScrollPositions = []; // 每页起始 Y 坐标
+    var _scrollHandler = null; // 滚动事件监听器
+
+    // 滚动到指定页
+    function _scrollToPage(page) {
+      if (page < 0 || page >= _pageScrollPositions.length) return;
+      _currentPage = page;
+      var y = _pageScrollPositions[page] || 0;
+      window.scrollTo({ top: Math.max(0, y - 10), behavior: 'smooth' });
+      // 通知 Flutter 更新页码
+      sendToFlutter('rendered', {
+        measureCount: _measuresPerPage,
+        totalMeasures: _totalMeasures,
+        page: page,
+        totalPages: _totalPages,
+        width: 0,
+        height: 0,
+        scrollOnly: true,
+      });
+    }
+
+    // 设置滚动监听 — 检测用户滚动到下一页/上一页区域
+    function _setupScrollListener() {
+      if (_scrollHandler) {
+        window.removeEventListener('scroll', _scrollHandler);
+      }
+      var _lastScrollPage = _currentPage;
+      _scrollHandler = function() {
+        var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        // 根据滚动位置判断当前可见页
+        for (var i = _pageScrollPositions.length - 1; i >= 0; i--) {
+          if (scrollTop >= _pageScrollPositions[i] - 50) {
+            if (i !== _lastScrollPage) {
+              _lastScrollPage = i;
+              _currentPage = i;
+              // 通知 Flutter 页码变化
+              sendToFlutter('rendered', {
+                measureCount: _measuresPerPage,
+                totalMeasures: _totalMeasures,
+                page: i,
+                totalPages: _totalPages,
+                width: 0,
+                height: 0,
+                scrollOnly: true,
+              });
+            }
+            break;
+          }
+        }
+      };
+      window.addEventListener('scroll', _scrollHandler, { passive: true });
+    }
 
     function handleMessage(message) {
       try {
@@ -600,81 +648,14 @@ window.addEventListener('unhandledrejection', function(e) {
       }
     }
 
-    // 分页渲染：不重新加载 XML，只切换小节范围
+    // 分页导航：滚动到指定页（不重新渲染）
     async function renderPage(page) {
-      if (!osmd || !_currentXml || !osmd.Sheet) {
-        console.log('[OSMD] renderPage: not ready');
+      if (!_isPaged || _pageScrollPositions.length === 0) {
+        console.log('[OSMD] renderPage: not paged or no positions');
         return;
       }
-      _currentPage = page;
-      var total = osmd.Sheet.SourceMeasures.length;
-      var mpp = _measuresPerPage;
-      var startM = page * mpp;
-      var rawEnd = startM + mpp - 1;
-      var endM = Math.min(rawEnd, total - 1);
-      console.log('[OSMD] renderPage DEBUG2: page=' + page + ' type_page=' + typeof page + ' mpp=' + mpp + ' type_mpp=' + typeof mpp + ' startM=' + startM + ' rawEnd=' + rawEnd + ' endM=' + endM + ' total=' + total);
-      if (startM >= total) {
-        console.log('[OSMD] renderPage: page ' + page + ' out of range');
-        return;
-      }
-      console.log('[OSMD] renderPage ' + page + ': measures ' + startM + '-' + endM + ' / ' + total + ' (mpp=' + mpp + ')');
-
-      _rendering = true;
-      try {
-        osmd.EngravingRules.MinMeasureToDrawIndex = startM;
-        osmd.EngravingRules.MaxMeasureToDrawIndex = endM;
-
-        var t5 = performance.now();
-        await osmd.render();
-        var t6 = performance.now();
-        console.log('[PERF] T6_osmd_render: ' + t6.toFixed(1) + 'ms');
-        console.log('[PERF] JS_breakdown: render=' + (t6 - t5).toFixed(1) + 'ms (page ' + page + ')');
-
-        applyCJKFonts();
-        collectMeasurePositions();
-
-        // ── 分页定位 ──
-        var clipHeight = null;
-        var clipContainer = document.getElementById('score-container');
-        if (clipContainer) {
-          // 找到当前页第一小节的 Y 坐标
-          var scrollY = 0;
-          var ml = osmd.graphic ? osmd.graphic.measureList : null;
-          if (ml) {
-            var minIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
-            for (var ci = 0; ci < ml.length; ci++) {
-              if (ci === minIdx && ml[ci][0] && ml[ci][0].PositionAndShape) {
-                scrollY = ml[ci][0].PositionAndShape.absolutePosition.y * 10;
-                break;
-              }
-            }
-          }
-          window.scrollTo({ top: Math.max(0, scrollY - 30), behavior: 'auto' });
-          console.log('[OSMD] scroll(page): scrollTo=' + Math.max(0, scrollY - 30).toFixed(0) + 'px page=' + page);
-        }
-
-        sendToFlutter('rendered', {
-          measureCount: endM - startM + 1,
-          totalMeasures: total,
-          page: page,
-          totalPages: Math.ceil(total / _measuresPerPage),
-          width: clipContainer ? clipContainer.scrollWidth : 0,
-          height: clipContainer ? clipContainer.scrollHeight : 0,
-        });
-
-        // 滚到顶部
-        window.scrollTo({ top: 0, behavior: 'auto' });
-      } catch (e) {
-        console.error('[OSMD] renderPage error:', e);
-        sendToFlutter('error', { message: e.message });
-      } finally {
-        _rendering = false;
-        if (_pendingXml) {
-          var xml = _pendingXml;
-          _pendingXml = null;
-          render(xml);
-        }
-      }
+      console.log('[OSMD] renderPage: scroll to page ' + page + '/' + _totalPages);
+      _scrollToPage(page);
     }
 
     function handleMessageB64(b64) {
