@@ -28,6 +28,9 @@ class ScoreRenderer extends StatefulWidget {
   /// 错误回调
   final void Function(String error)? onError;
 
+  /// 每页小节数，null 表示不分页（渲染全部）
+  final int? measuresPerPage;
+
   const ScoreRenderer({
     super.key,
     required this.musicXml,
@@ -37,6 +40,7 @@ class ScoreRenderer extends StatefulWidget {
     this.loopEndMeasure,
     this.onRendered,
     this.onError,
+    this.measuresPerPage,
   });
 
   @override
@@ -48,9 +52,14 @@ class _ScoreRendererState extends State<ScoreRenderer> {
   bool _isLoaded = false;
   bool _isRendered = false;
 
+  // ── 性能计时 ──
+  final Stopwatch _perf = Stopwatch();
+  int? _t0; // render 开始
+
   @override
   void initState() {
     super.initState();
+    _perf.start();
     _initWebView();
   }
 
@@ -98,6 +107,7 @@ class _ScoreRendererState extends State<ScoreRenderer> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {
+            debugPrint('[PERF] T_webview_loaded: ${_perf.elapsedMilliseconds}ms');
             _isLoaded = true;
             // 先注入 CJK 字体，加载完成后再渲染乐谱
             _injectCJKFont();
@@ -158,13 +168,22 @@ class _ScoreRendererState extends State<ScoreRenderer> {
           break;
 
         case 'rendered':
+          // 先设置状态，确保 UI 立即更新
           setState(() {
             _isRendered = true;
           });
+          // 然后打印性能日志（不影响 UI）
+          final t7 = _perf.elapsedMilliseconds;
+          if (_t0 != null) {
+            debugPrint('[PERF] TOTAL: ${t7 - _t0!}ms  xml=${widget.musicXml.length}chars  measures=${data['measureCount']}');
+          }
           final info = ScoreRenderInfo(
             measureCount: data['measureCount'] ?? 0,
             width: (data['width'] ?? 0).toDouble(),
             height: (data['height'] ?? 0).toDouble(),
+            totalMeasures: data['totalMeasures'] ?? 0,
+            page: data['page'] ?? 0,
+            totalPages: data['totalPages'] ?? 1,
           );
           widget.onRendered?.call(info);
 
@@ -202,7 +221,21 @@ class _ScoreRendererState extends State<ScoreRenderer> {
   }
 
   void _renderScore() {
-    _sendMessage({'action': 'render', 'xml': widget.musicXml});
+    _t0 = _perf.elapsedMilliseconds;
+    debugPrint('[PERF] T0_render_start: ${_t0}ms xml=${widget.musicXml.length}chars');
+    final msg = {'action': 'render', 'xml': widget.musicXml};
+    if (widget.measuresPerPage != null) {
+      msg['measuresPerPage'] = widget.measuresPerPage.toString();
+    }
+    _sendMessage(msg);
+    debugPrint('[PERF] T2_js_dispatched: ${_perf.elapsedMilliseconds}ms');
+  }
+
+  /// 翻页（不重新加载 XML，只切换小节范围）
+  void renderPage(int page) {
+    debugPrint('[ScoreRenderer] renderPage: $page');
+    _t0 = _perf.elapsedMilliseconds;
+    _sendMessage({'action': 'renderPage', 'page': page});
   }
 
   void _highlightMeasure(int measureIndex) {
@@ -254,14 +287,20 @@ class ScoreRenderInfo {
   final int measureCount;
   final double width;
   final double height;
+  final int totalMeasures;
+  final int page;
+  final int totalPages;
 
   ScoreRenderInfo({
     required this.measureCount,
     required this.width,
     required this.height,
+    this.totalMeasures = 0,
+    this.page = 0,
+    this.totalPages = 1,
   });
 
   @override
   String toString() =>
-      'ScoreRenderInfo(measures=$measureCount, ${width}x$height)';
+      'ScoreRenderInfo(measures=$measureCount/$totalMeasures, page=$page/$totalPages, ${width}x$height)';
 }

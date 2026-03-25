@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/router/app_router.dart';
 import '../../../data/providers/score_provider.dart';
@@ -184,21 +186,45 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   }
 
   Future<void> _loadScoreXml() async {
-    // 有缓存直接用，不重新下载
-    final cached = _xmlCache[_currentScoreId];
-    if (cached != null) {
-      debugPrint('[ScoreViewPage] Using cached XML for $_currentScoreId');
+    final sw = Stopwatch()..start();
+
+    // 1. 内存缓存
+    final memCached = _xmlCache[_currentScoreId];
+    if (memCached != null) {
+      debugPrint('[Cache] HIT memory: $_currentScoreId (${sw.elapsedMilliseconds}ms)');
       if (mounted) {
         setState(() {
-          _xmlContent = cached;
+          _xmlContent = memCached;
           _isLoadingXml = false;
           _xmlError = null;
         });
-        _initAutoPlayerFromXml(cached);
+        _initAutoPlayerFromXml(memCached);
       }
       return;
     }
 
+    // 2. 磁盘缓存
+    try {
+      final file = await _getCacheFile(_currentScoreId);
+      if (await file.exists()) {
+        final xml = await file.readAsString();
+        _xmlCache[_currentScoreId] = xml;
+        debugPrint('[Cache] HIT disk: $_currentScoreId (${sw.elapsedMilliseconds}ms, ${xml.length}chars)');
+        if (mounted) {
+          setState(() {
+            _xmlContent = xml;
+            _isLoadingXml = false;
+            _xmlError = null;
+          });
+          _initAutoPlayerFromXml(xml);
+        }
+        return;
+      }
+    } catch (e) {
+      debugPrint('[Cache] disk read error: $e');
+    }
+
+    // 3. 从服务端下载
     setState(() {
       _isLoadingXml = true;
       _xmlError = null;
@@ -208,7 +234,14 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         final xml = await _scoreRepo.getScoreXml(_currentScoreId);
+        debugPrint('[Cache] MISS → downloaded: $_currentScoreId (${sw.elapsedMilliseconds}ms, ${xml.length}chars)');
+
+        // 写入内存缓存
         _xmlCache[_currentScoreId] = xml;
+
+        // 写入磁盘缓存（异步，不阻塞 UI）
+        _saveToDiskCache(_currentScoreId, xml);
+
         if (mounted) {
           setState(() {
             _xmlContent = xml;
@@ -230,6 +263,27 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
           });
         }
       }
+    }
+  }
+
+  /// 获取磁盘缓存文件路径
+  Future<File> _getCacheFile(String scoreId) async {
+    final dir = await getApplicationCacheDirectory();
+    final cacheDir = Directory('${dir.path}/score_xml');
+    if (!await cacheDir.exists()) {
+      await cacheDir.create(recursive: true);
+    }
+    return File('${cacheDir.path}/$scoreId.xml');
+  }
+
+  /// 异步写入磁盘缓存
+  Future<void> _saveToDiskCache(String scoreId, String xml) async {
+    try {
+      final file = await _getCacheFile(scoreId);
+      await file.writeAsString(xml);
+      debugPrint('[Cache] saved to disk: $scoreId (${xml.length}chars)');
+    } catch (e) {
+      debugPrint('[Cache] disk write error: $e');
     }
   }
 

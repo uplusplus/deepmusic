@@ -205,7 +205,16 @@ window.addEventListener('unhandledrejection', function(e) {
     var _rendering = false;
     var _pendingXml = null;  // 排队等待渲染的 XML
     var _renderCallCount = 0;
-    async function render(xmlString) {
+    async function render(xmlString, measuresPerPage) {
+      // 分页设置
+      if (measuresPerPage && measuresPerPage > 0) {
+        _measuresPerPage = measuresPerPage;
+        _isPaged = true;
+      } else {
+        _isPaged = false;
+      }
+      _currentPage = 0;
+      _currentXml = xmlString;
       var callId = ++_renderCallCount;
       console.log('[OSMD] render() #' + callId + ' _rendering=' + _rendering + ' osmd=' + !!osmd + ' xmlLen=' + (xmlString ? xmlString.length : 0));
       if (_rendering) {
@@ -254,6 +263,20 @@ window.addEventListener('unhandledrejection', function(e) {
         }
 
         await osmd.load(xmlString);
+        var t5 = performance.now();
+        console.log('[PERF] T5_osmd_load: ' + t5.toFixed(1) + 'ms');
+
+        // 应用小节范围（分页渲染）— 必须在 load 之后、render 之前
+        var startM = msg.startMeasure || 0;
+        var endM = msg.endMeasure || 9999;
+        var totalMeasures = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : 0;
+        if (totalMeasures > 0) {
+          osmd.EngravingRules.MinMeasureToDrawIndex = startM;
+          osmd.EngravingRules.MaxMeasureToDrawIndex = Math.min(endM, totalMeasures - 1);
+          console.log('[OSMD] measure range: ' + startM + '-' + Math.min(endM, totalMeasures - 1) + ' / ' + totalMeasures);
+        }
+        var t5 = performance.now();
+        console.log('[PERF] T5_osmd_load: ' + t5.toFixed(1) + 'ms');
 
         // Debug: 检查 OSMD 的绘制限制
         console.log('[DM] MaxMeasureToDrawIndex=' + osmd.EngravingRules.MaxMeasureToDrawIndex
@@ -288,6 +311,8 @@ window.addEventListener('unhandledrejection', function(e) {
         }
 
         await osmd.render();
+        var t6 = performance.now();
+        console.log('[PERF] T6_osmd_render: ' + t6.toFixed(1) + 'ms');
 
         // Debug: dump ALL properties of first graphical measure
         if (osmd.graphic && osmd.graphic.measureList && osmd.graphic.measureList.length > 0) {
@@ -342,6 +367,12 @@ window.addEventListener('unhandledrejection', function(e) {
 
 
         document.getElementById('loading').style.display = 'none';
+        var jsDecode = window._perfT4 ? (window._perfT4 - window._perfT3).toFixed(1) : '?';
+        var jsLoad = window._perfT4 ? (t5 - window._perfT4).toFixed(1) : '?';
+        var jsRender = (t6 - t5).toFixed(1);
+        var jsTotal = window._perfT3 ? (t6 - window._perfT3).toFixed(1) : '?';
+        console.log('[PERF] JS_breakdown: decode=' + jsDecode + 'ms load=' + jsLoad + 'ms render=' + jsRender + 'ms total=' + jsTotal + 'ms');
+
         sendToFlutter('rendered', {
           measureCount: measurePositions.length,
           width: document.getElementById('score-container').scrollWidth,
@@ -505,11 +536,19 @@ window.addEventListener('unhandledrejection', function(e) {
       svg.querySelectorAll('.loop-highlight').forEach(el => el.remove());
     }
 
+    // 全局分页状态
+    var _currentXml = null;
+    var _measuresPerPage = 15;
+    var _currentPage = 0;
+    var _totalMeasures = 0;
+    var _isPaged = false;
+
     function handleMessage(message) {
       try {
         const msg = JSON.parse(message);
         switch (msg.action) {
-          case 'render': render(msg.xml); break;
+          case 'render': render(msg.xml, msg.measuresPerPage); break;
+          case 'renderPage': renderPage(msg.page); break;
           case 'highlight': highlightMeasure(msg.measure); scrollToMeasure(msg.measure); break;
           case 'clearHighlight': clearHighlight(); break;
           case 'scrollTo': scrollToMeasure(msg.measure); break;
@@ -523,10 +562,77 @@ window.addEventListener('unhandledrejection', function(e) {
       }
     }
 
+    // 分页渲染：不重新加载 XML，只切换小节范围
+    async function renderPage(page) {
+      if (!osmd || !_currentXml || !osmd.Sheet) {
+        console.log('[OSMD] renderPage: not ready');
+        return;
+      }
+      _currentPage = page;
+      var total = osmd.Sheet.SourceMeasures.length;
+      var startM = page * _measuresPerPage;
+      var endM = Math.min(startM + _measuresPerPage - 1, total - 1);
+      if (startM >= total) {
+        console.log('[OSMD] renderPage: page ' + page + ' out of range');
+        return;
+      }
+      console.log('[OSMD] renderPage ' + page + ': measures ' + startM + '-' + endM + ' / ' + total);
+
+      _rendering = true;
+      try {
+        osmd.EngravingRules.MinMeasureToDrawIndex = startM;
+        osmd.EngravingRules.MaxMeasureToDrawIndex = endM;
+
+        var t5 = performance.now();
+        await osmd.render();
+        var t6 = performance.now();
+        console.log('[PERF] T6_osmd_render: ' + t6.toFixed(1) + 'ms');
+        console.log('[PERF] JS_breakdown: render=' + (t6 - t5).toFixed(1) + 'ms (page ' + page + ')');
+
+        applyCJKFonts();
+        collectMeasurePositions();
+
+        var container = document.getElementById('score-container');
+        sendToFlutter('rendered', {
+          measureCount: endM - startM + 1,
+          totalMeasures: total,
+          page: page,
+          totalPages: Math.ceil(total / _measuresPerPage),
+          width: container.scrollWidth,
+          height: container.scrollHeight,
+        });
+
+        // 滚到顶部
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      } catch (e) {
+        console.error('[OSMD] renderPage error:', e);
+        sendToFlutter('error', { message: e.message });
+      } finally {
+        _rendering = false;
+        if (_pendingXml) {
+          var xml = _pendingXml;
+          _pendingXml = null;
+          render(xml);
+        }
+      }
+    }
+
     function handleMessageB64(b64) {
       try {
-        var bytes = Uint8Array.from(atob(b64), function(c) { return c.charCodeAt(0); });
+        var t3 = performance.now();
+        console.log('[PERF] T3_js_receive: ' + t3.toFixed(1) + 'ms');
+        var raw = atob(b64);
+        var t_atob = performance.now();
+        console.log('[PERF] T_atob: ' + t_atob.toFixed(1) + 'ms (+' + (t_atob - t3).toFixed(1) + 'ms, b64_len=' + b64.length + ')');
+        var bytes = Uint8Array.from(raw, function(c) { return c.charCodeAt(0); });
+        var t_bytes = performance.now();
+        console.log('[PERF] T_bytes: ' + t_bytes.toFixed(1) + 'ms (+' + (t_bytes - t_atob).toFixed(1) + 'ms)');
         var json = new TextDecoder().decode(bytes);
+        var t4 = performance.now();
+        console.log('[PERF] T4_decode: ' + t4.toFixed(1) + 'ms (+' + (t4 - t_bytes).toFixed(1) + 'ms, total_decode=' + (t4 - t3).toFixed(1) + 'ms)');
+        window._perfT3 = t3;
+        window._perfT4 = t4;
+        window._perfAtob = t_atob;
         handleMessage(json);
       } catch (e) {
         console.error('[OSMD] handleMessageB64 error:', e);

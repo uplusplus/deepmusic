@@ -92,6 +92,16 @@ deepmusic/
 
 ---
 
+## 最新更新 (2026-03-24 09:00)
+
+### 📊 OSMD 渲染性能优化 (2026-03-24)
+- **性能计时体系**：渲染管线全链路 `[PERF]` 打点（Dart T0/T2 → JS T3/T4/T5/T6 → TOTAL），可精确定位瓶颈
+- **三级 XML 缓存**：内存 → 磁盘 (`getApplicationCacheDirectory/score_xml/`) → 网络，切换已缓存乐谱无需重复下载
+- **分页渲染支持**：JS 端新增 `renderPage(page)` 方法，翻页不重新加载 XML，只切换小节范围重新渲染 SVG
+- **独立性能测试页**：`benchmark.html` 内置 3 首乐谱，可脱离 App 在浏览器中测 OSMD 基准性能
+- `ScoreRenderer` 新增 `measuresPerPage` 参数 + `renderPage()` 方法 + `ScoreRenderInfo` 扩展（totalMeasures/page/totalPages）
+- 详见 [wiki/2026-03-24-osmd-performance-optimization.md](wiki/2026-03-24-osmd-performance-optimization.md)
+
 ## 最新更新 (2026-03-22 23:00)
 
 ### 🎵 乐谱列表 + 切换 (2026-03-22)
@@ -354,4 +364,4 @@ deepmusic/
 
 ---
 
-*项目启动: 2026-03-15 | 最近更新: 2026-03-22 23:00*
+*项目启动: 2026-03-15 | 最近更新: 2026-03-24 09:00*
