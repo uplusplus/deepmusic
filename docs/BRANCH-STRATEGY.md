@@ -3,9 +3,7 @@
 ## 分支模型
 
 ```
-main          ← 生产分支，稳定可发布
-  ↑ PR
-develop       ← 开发主干，集成分支
+mobile        ← 主干分支，稳定可发布
   ↑ PR
 feat/*        ← 功能分支，每个功能一个
 fix/*         ← 修复分支
@@ -28,13 +26,12 @@ release/*     ← 发版分支
 
 ## PR 流程
 
-1. 从 `develop` 拉 feature 分支
-2. 开发完成后提交 PR → `develop`
+1. 从 `mobile` 拉 feature 分支
+2. 开发完成后提交 PR → `mobile`
 3. PR 描述使用模板，填写改动说明
 4. 等待测试-Roy 验证
 5. CMO-Palm 审核合入标准
-6. 合入 `develop`，删除 feature 分支
-7. 定期从 `develop` 合入 `main` 发版
+6. 合入 `mobile`，删除 feature 分支
 
 ## 责任人
 
