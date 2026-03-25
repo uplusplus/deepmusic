@@ -88,7 +88,7 @@
     </div>
 
     <div class="score-list">
-      <h3>📚 已有乐谱</h3>
+      <h3>📚 已有乐谱 <span id="scoreCount" style="font-weight:normal;font-size:14px;color:#888"></span></h3>
       <div id="scoreList">加载中...</div>
     </div>
     <div class="logout"><a href="#" onclick="logout()">退出登录</a></div>
@@ -199,20 +199,44 @@ async function upload() {
   btn.textContent = '上传';
 }
 
+function formatDuration(sec) {
+  if (!sec) return '-';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function formatSize(bytes) {
+  if (!bytes) return '-';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+const difficultyMap = { BEGINNER: '初级', INTERMEDIATE: '中级', ADVANCED: '高级' };
+
 async function loadScores() {
   try {
-    const res = await fetch(API + '/scores?page=1&limit=50', {
+    const res = await fetch(API + '/scores?page=1&limit=100', {
       headers: { 'Authorization': 'Bearer ' + token }
     });
     const data = await res.json();
     const el = document.getElementById('scoreList');
+    const countEl = document.getElementById('scoreCount');
     if (data.success && data.data.length) {
-      el.innerHTML = data.data.map(s =>
+      countEl.textContent = `(${data.pagination.total} 首)`;
+      el.innerHTML = data.data.map((s, i) =>
         `<div class="score-item">
-          <div><div class="title">${s.title}</div><div class="meta">${s.composer} · ${s.difficulty}</div></div>
+          <div style="width:24px;color:#aaa;text-align:right">${i + 1}.</div>
+          <div style="flex:1;margin-left:8px">
+            <div class="title">${s.title}</div>
+            <div class="meta">${s.composer}${s.category ? ' · ' + s.category : ''} · ${difficultyMap[s.difficulty] || s.difficulty} · ${formatDuration(s.duration)} · ${formatSize(s.fileSize)}</div>
+          </div>
+          <div style="color:#aaa;font-size:12px">${s.status === 'DRAFT' ? '📝 草稿' : '✅ 已发布'}</div>
         </div>`
       ).join('');
     } else {
+      countEl.textContent = '(0 首)';
       el.innerHTML = '<p style="color:#888">暂无乐谱</p>';
     }
   } catch (e) {
