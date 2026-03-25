@@ -61,15 +61,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
   // 左右手模式
   HandMode _handMode = HandMode.both;
 
-  // 分页状态
-  int _currentPage = 0;
-  int _totalPages = 1;
-  int _totalMeasures = 0;
-  static const int _measuresPerPage = 15;
-  bool get _isPaged => _totalPages > 1;
-  // 用 GlobalKey 访问 ScoreRenderer 的 renderPage 方法
-  final GlobalKey _rendererKey = GlobalKey();
-
   // 切谱过渡：loading 遮罩
   bool _showLoadingOverlay = false;
   // 缓存乐谱数据，切换时保持界面不闪
@@ -310,10 +301,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
       _highlightMeasure = 1;
       _playState = AutoPlayState.initial();
       _isFavorite = false;
-      // 重置分页
-      _currentPage = 0;
-      _totalPages = 1;
-      _totalMeasures = 0;
     });
 
     // 刷新详情 provider
@@ -494,8 +481,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
         _buildCompactInfoBar(score),
         // 乐谱渲染区域（主区域）
         Expanded(child: _buildScoreRenderer()),
-        // 分页导航栏
-        if (_isPaged) _buildPaginationBar(),
         // 虚拟键盘（播放时显示，固定高度避免布局异常）
         if (_playState.isPlaying && _showKeyboard)
           SizedBox(
@@ -526,7 +511,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
           child: Column(
             children: [
               Expanded(child: _buildScoreRenderer()),
-              if (_isPaged) _buildPaginationBar(),
               if (_playState.isPlaying && _showKeyboard)
                 SizedBox(
                   height: 160,
@@ -635,68 +619,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
               score.difficultyText,
               style: TextStyle(color: score.difficultyColor, fontSize: 12),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════
-  // 分页导航栏
-  // ═══════════════════════════════════════
-
-  Widget _buildPaginationBar() {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        border: Border(
-          top: BorderSide(color: AppColors.divider),
-          bottom: BorderSide(color: AppColors.divider),
-        ),
-      ),
-      child: Row(
-        children: [
-          // 上一页
-          _PaginationButton(
-            icon: Icons.chevron_left,
-            onTap: _currentPage > 0 ? _prevPage : null,
-          ),
-          const SizedBox(width: 8),
-          // 页码指示
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_totalPages, (i) {
-                final isActive = i == _currentPage;
-                return GestureDetector(
-                  onTap: () => _goToPage(i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: isActive ? 24 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: isActive ? AppColors.primary : Colors.grey[300],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // 页码文字
-          Text(
-            '${_currentPage + 1}/$_totalPages',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-          ),
-          const SizedBox(width: 8),
-          // 下一页
-          _PaginationButton(
-            icon: Icons.chevron_right,
-            onTap: _currentPage < _totalPages - 1 ? _nextPage : null,
           ),
         ],
       ),
@@ -1032,26 +954,6 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
     );
   }
 
-  // ── 分页导航 ──
-
-  void _goToPage(int page) {
-    if (page < 0 || page >= _totalPages) return;
-    if (page == _currentPage) return;
-    debugPrint('[Pagination] go to page $page ($_measuresPerPage measures/page, total=$_totalMeasures)');
-    setState(() => _currentPage = page);
-    // 通过 GlobalKey 调用 ScoreRenderer 的 renderPage
-    final state = _rendererKey.currentState;
-    if (state != null) {
-      // ScoreRenderer._ScoreRendererState has public renderPage(int) method
-      (state as dynamic).renderPage(page);
-    } else {
-      debugPrint('[Pagination] renderer state is null!');
-    }
-  }
-
-  void _nextPage() => _goToPage(_currentPage + 1);
-  void _prevPage() => _goToPage(_currentPage - 1);
-
   Widget _buildScoreRenderer() {
     // 首次加载，还没有 XML → 显示加载指示器
     if (_xmlContent == null || _xmlContent!.isEmpty) {
@@ -1087,26 +989,19 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
 
     // 有 XML → 始终显示 ScoreRenderer（WebView 保持存活）
     // 切换乐谱时叠加 loading overlay，渲染完消失
-    debugPrint('[Pagination] _isPaged=$_isPaged _totalPages=$_totalPages _currentPage=$_currentPage measuresPerPage=$_measuresPerPage totalMeasures=$_totalMeasures');
     return Stack(
       children: [
         Container(
           color: Colors.white,
           child: ScoreRenderer(
-            key: _rendererKey,
             musicXml: _xmlContent!,
             highlightMeasure: _highlightMeasure,
-            measuresPerPage: _measuresPerPage,
             onRendered: (info) {
-              debugPrint('[Pagination] onRendered: $info');
-              debugPrint('[Pagination] parsed: totalMeasures=${info.totalMeasures} page=${info.page} totalPages=${info.totalPages}');
+              debugPrint('Score rendered: $info');
               if (mounted) {
                 setState(() {
                   _isLoadingXml = false;
                   _showLoadingOverlay = false;
-                  _totalMeasures = info.totalMeasures;
-                  _totalPages = info.totalPages;
-                  _currentPage = info.page;
                 });
               }
             },
