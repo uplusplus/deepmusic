@@ -611,14 +611,14 @@ class _ScoreViewPageState extends ConsumerState<ScoreViewPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  score.composer,
+                  score.title,
                   style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${score.keySignature} · ${score.timeSignature} · ${score.formattedDuration}',
+                  '${score.composer} · ${score.keySignature} · ${score.timeSignature} · ${score.formattedDuration}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                 ),
               ],

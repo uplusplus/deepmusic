@@ -386,45 +386,24 @@ window.addEventListener('unhandledrejection', function(e) {
         var jsTotal = window._perfT3 ? (t6 - window._perfT3).toFixed(1) : '?';
         console.log('[PERF] JS_breakdown: decode=' + jsDecode + 'ms load=' + jsLoad + 'ms render=' + jsRender + 'ms total=' + jsTotal + 'ms');
 
-        // ── 分页裁剪：SVG 总高包含所有小节，但只显示当前页 ──
+        // ── 分页定位：SVG 渲染全部内容，滚动到当前页位置 ──
         var clipHeight = null;
-        if (_isPaged && osmd.graphic && osmd.graphic.measureList) {
-          var ml = osmd.graphic.measureList;
-          var minIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
-          var maxIdx = osmd.EngravingRules.MaxMeasureToDrawIndex || (ml.length - 1);
-
-          // measureList 中的位置是相对于整个乐谱的
-          // 找到可见范围内的第一个和最后一个 measure 的 Y 坐标
-          var firstY = null;
-          var lastBottomY = null;
-
-          for (var i = 0; i < ml.length; i++) {
-            var m = ml[i][0];
-            if (!m || !m.PositionAndShape) continue;
-            var pos = m.PositionAndShape;
-            // 用 measureList 中的索引判断是否在可见范围内
-            if (i >= minIdx && i <= maxIdx) {
-              var y = pos.absolutePosition.y * 10;
-              var h = pos.size.height * 10;
-              if (firstY === null || y < firstY) firstY = y;
-              if (lastBottomY === null || y + h > lastBottomY) lastBottomY = y + h;
+        if (_isPaged) {
+          // 找到当前页第一小节的 Y 坐标
+          var scrollY = 0;
+          if (osmd.graphic && osmd.graphic.measureList) {
+            var ml = osmd.graphic.measureList;
+            var minIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
+            for (var i = 0; i < ml.length; i++) {
+              if (i === minIdx && ml[i][0] && ml[i][0].PositionAndShape) {
+                scrollY = ml[i][0].PositionAndShape.absolutePosition.y * 10;
+                break;
+              }
             }
           }
-
-          if (firstY !== null && lastBottomY !== null) {
-            var pageHeight = lastBottomY - firstY;
-            clipHeight = pageHeight + 40; // 留边距
-            var container = document.getElementById('score-container');
-            container.style.overflow = 'hidden';
-            container.style.height = clipHeight + 'px';
-            container.style.position = 'relative';
-            var svg = container.querySelector('svg');
-            if (svg) {
-              svg.style.transform = 'translateY(' + (-firstY) + 'px)';
-              svg.style.transformOrigin = 'top left';
-            }
-            console.log('[OSMD] clip: firstY=' + firstY.toFixed(1) + ' lastBottom=' + lastBottomY.toFixed(1) + ' pageHeight=' + pageHeight.toFixed(0) + 'px clipHeight=' + clipHeight.toFixed(0) + 'px range=' + minIdx + '-' + maxIdx);
-          }
+          // 用 scrollTo 滚到当前页（保留标题可见）
+          window.scrollTo({ top: Math.max(0, scrollY - 30), behavior: 'auto' });
+          console.log('[OSMD] scroll: scrollTo=' + Math.max(0, scrollY - 30).toFixed(0) + 'px page=' + _currentPage);
         }
 
         var total = osmd.Sheet ? osmd.Sheet.SourceMeasures.length : measurePositions.length;
@@ -435,7 +414,7 @@ window.addEventListener('unhandledrejection', function(e) {
           page: _currentPage,
           totalPages: _isPaged ? Math.ceil(total / _measuresPerPage) : 1,
           width: containerEl.scrollWidth,
-          height: clipHeight || containerEl.scrollHeight,
+          height: containerEl.scrollHeight,
         });
       } catch (e) {
         console.error('[OSMD] render #' + callId + ' ERROR: ' + e.message);
@@ -654,37 +633,24 @@ window.addEventListener('unhandledrejection', function(e) {
         applyCJKFonts();
         collectMeasurePositions();
 
-        // ── 分页裁剪 ──
+        // ── 分页定位 ──
         var clipHeight = null;
         var clipContainer = document.getElementById('score-container');
-        var ml = osmd.graphic ? osmd.graphic.measureList : null;
-        if (ml && clipContainer) {
-          var firstY = null, lastBottomY = null;
-          var clipMinIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
-          var clipMaxIdx = osmd.EngravingRules.MaxMeasureToDrawIndex || (ml.length - 1);
-          for (var ci = 0; ci < ml.length; ci++) {
-            var cm = ml[ci][0];
-            if (!cm || !cm.PositionAndShape) continue;
-            if (ci < clipMinIdx || ci > clipMaxIdx) continue;
-            var cpos = cm.PositionAndShape;
-            var cy = cpos.absolutePosition.y * 10;
-            var ch = cpos.size.height * 10;
-            if (firstY === null || cy < firstY) firstY = cy;
-            if (lastBottomY === null || cy + ch > lastBottomY) lastBottomY = cy + ch;
-          }
-          if (firstY !== null && lastBottomY !== null) {
-            var pageHeight = lastBottomY - firstY;
-            clipHeight = pageHeight + 40;
-            clipContainer.style.overflow = 'hidden';
-            clipContainer.style.height = clipHeight + 'px';
-            clipContainer.style.position = 'relative';
-            var clipSvg = clipContainer.querySelector('svg');
-            if (clipSvg) {
-              clipSvg.style.transform = 'translateY(' + (-firstY) + 'px)';
-              clipSvg.style.transformOrigin = 'top left';
+        if (clipContainer) {
+          // 找到当前页第一小节的 Y 坐标
+          var scrollY = 0;
+          var ml = osmd.graphic ? osmd.graphic.measureList : null;
+          if (ml) {
+            var minIdx = osmd.EngravingRules.MinMeasureToDrawIndex || 0;
+            for (var ci = 0; ci < ml.length; ci++) {
+              if (ci === minIdx && ml[ci][0] && ml[ci][0].PositionAndShape) {
+                scrollY = ml[ci][0].PositionAndShape.absolutePosition.y * 10;
+                break;
+              }
             }
-            console.log('[OSMD] clip(page): firstY=' + firstY.toFixed(1) + ' lastBottom=' + lastBottomY.toFixed(1) + ' pageHeight=' + pageHeight.toFixed(0) + 'px range=' + clipMinIdx + '-' + clipMaxIdx);
           }
+          window.scrollTo({ top: Math.max(0, scrollY - 30), behavior: 'auto' });
+          console.log('[OSMD] scroll(page): scrollTo=' + Math.max(0, scrollY - 30).toFixed(0) + 'px page=' + page);
         }
 
         sendToFlutter('rendered', {
@@ -693,7 +659,7 @@ window.addEventListener('unhandledrejection', function(e) {
           page: page,
           totalPages: Math.ceil(total / _measuresPerPage),
           width: clipContainer ? clipContainer.scrollWidth : 0,
-          height: clipHeight || (clipContainer ? clipContainer.scrollHeight : 0),
+          height: clipContainer ? clipContainer.scrollHeight : 0,
         });
 
         // 滚到顶部
