@@ -88,7 +88,7 @@
     </div>
 
     <div class="score-list">
-      <h3>📚 已有乐谱 <span id="scoreCount"></span></h3>
+      <h3>📚 已有乐谱</h3>
       <div id="scoreList">加载中...</div>
     </div>
     <div class="logout"><a href="#" onclick="logout()">退出登录</a></div>
@@ -207,14 +207,12 @@ async function loadScores() {
     const data = await res.json();
     const el = document.getElementById('scoreList');
     if (data.success && data.data.length) {
-      document.getElementById('scoreCount').textContent = `(${data.pagination.total} 首)`;
       el.innerHTML = data.data.map(s =>
         `<div class="score-item">
           <div><div class="title">${s.title}</div><div class="meta">${s.composer} · ${s.difficulty}</div></div>
         </div>`
       ).join('');
     } else {
-      document.getElementById('scoreCount').textContent = '(0 首)';
       el.innerHTML = '<p style="color:#888">暂无乐谱</p>';
     }
   } catch (e) {

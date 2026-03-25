@@ -106,8 +106,7 @@ export const createScore = async (data: {
       category: data.category,
       source: data.source,
       license: data.license,
-      status: 'PUBLISHED',
-      publishedAt: new Date(),
+      status: 'DRAFT',
     },
   });
 
