@@ -2,9 +2,9 @@ name: CI - Flutter Mobile
 
 on:
   push:
-    branches: [develop, main]
+    branches: [mobile, main]
   pull_request:
-    branches: [develop, main]
+    branches: [mobile, main]
 
 defaults:
   run:
